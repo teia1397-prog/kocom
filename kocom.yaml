@@ -1,0 +1,90 @@
+substitutions:
+  name: "esp-kocom"
+  friendly_name: "ESP Kocom"
+
+esphome:
+  name: "${name}"
+  friendly_name: "${friendly_name}"
+  # [추가] 부팅 시 상태 동기화 (일괄 소등 방지 핵심 1)
+  on_boot:
+    priority: -10
+    then:
+      - delay: 5s
+      - uartex.write: 
+          data: [0x30, 0xbc, 0x00, 0x0e, 0x00, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+          ack: [0x30, 0xdc]
+
+esp32:
+  board: m5stack-atoms3
+  variant: esp32s3
+  framework:
+    type: arduino
+
+packages:
+  remote:
+    refresh: always
+    url: https://github.com/teia1397-prog/kocom/
+    files:
+      - device_base.yaml
+      - esp32.yaml
+      - kocom.yaml
+
+# [추가] 람다 로직 적용 (일괄 소등 방지 핵심 2)
+# GitHub에서 가져온 light 설정을 이 내용이 덮어씌웁니다.
+light:
+  - platform: uartex
+    name: "Living Room Light 1"
+    id: livingroom_light_1
+    state: 
+      data: [0x30, 0xd0, 0x00, 0x0e, 0x00]
+      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
+    state_on: { offset: 8, data: [0xff] }
+    state_off: { offset: 8, data: [0x00] }
+    command_on: !lambda |-
+      uint8_t l1 = 0xff;
+      uint8_t l2 = id(livingroom_light_2).remote_values.is_on() ? 0xff : 0x00;
+      uint8_t l3 = id(livingroom_light_3).remote_values.is_on() ? 0xff : 0x00;
+      return {{0x30, 0xbc, 0x00, 0x0e, 0x00, 0x01, 0x00, 0x00, l1, l2, l3, 0x00, 0x00, 0x00, 0x00, 0x00}, {0x30, 0xdc}};
+    command_off: !lambda |-
+      uint8_t l1 = 0x00;
+      uint8_t l2 = id(livingroom_light_2).remote_values.is_on() ? 0xff : 0x00;
+      uint8_t l3 = id(livingroom_light_3).remote_values.is_on() ? 0xff : 0x00;
+      return {{0x30, 0xbc, 0x00, 0x0e, 0x00, 0x01, 0x00, 0x00, l1, l2, l3, 0x00, 0x00, 0x00, 0x00, 0x00}, {0x30, 0xdc}};
+
+  - platform: uartex
+    name: "Living Room Light 2"
+    id: livingroom_light_2
+    state: 
+      data: [0x30, 0xd0, 0x00, 0x0e, 0x00]
+      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
+    state_on: { offset: 9, data: [0xff] }
+    state_off: { offset: 9, data: [0x00] }
+    command_on: !lambda |-
+      uint8_t l1 = id(livingroom_light_1).remote_values.is_on() ? 0xff : 0x00;
+      uint8_t l2 = 0xff;
+      uint8_t l3 = id(livingroom_light_3).remote_values.is_on() ? 0xff : 0x00;
+      return {{0x30, 0xbc, 0x00, 0x0e, 0x00, 0x01, 0x00, 0x00, l1, l2, l3, 0x00, 0x00, 0x00, 0x00, 0x00}, {0x30, 0xdc}};
+    command_off: !lambda |-
+      uint8_t l1 = id(livingroom_light_1).remote_values.is_on() ? 0xff : 0x00;
+      uint8_t l2 = 0x00;
+      uint8_t l3 = id(livingroom_light_3).remote_values.is_on() ? 0xff : 0x00;
+      return {{0x30, 0xbc, 0x00, 0x0e, 0x00, 0x01, 0x00, 0x00, l1, l2, l3, 0x00, 0x00, 0x00, 0x00, 0x00}, {0x30, 0xdc}};
+
+  - platform: uartex
+    name: "Living Room Light 3"
+    id: livingroom_light_3
+    state: 
+      data: [0x30, 0xd0, 0x00, 0x0e, 0x00]
+      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
+    state_on: { offset: 10, data: [0xff] }
+    state_off: { offset: 10, data: [0x00] }
+    command_on: !lambda |-
+      uint8_t l1 = id(livingroom_light_1).remote_values.is_on() ? 0xff : 0x00;
+      uint8_t l2 = id(livingroom_light_2).remote_values.is_on() ? 0xff : 0x00;
+      uint8_t l3 = 0xff;
+      return {{0x30, 0xbc, 0x00, 0x0e, 0x00, 0x01, 0x00, 0x00, l1, l2, l3, 0x00, 0x00, 0x00, 0x00, 0x00}, {0x30, 0xdc}};
+    command_off: !lambda |-
+      uint8_t l1 = id(livingroom_light_1).remote_values.is_on() ? 0xff : 0x00;
+      uint8_t l2 = id(livingroom_light_2).remote_values.is_on() ? 0xff : 0x00;
+      uint8_t l3 = 0x00;
+      return {{0x30, 0xbc, 0x00, 0x0e, 0x00, 0x01, 0x00, 0x00, l1, l2, l3, 0x00, 0x00, 0x00, 0x00, 0x00}, {0x30, 0xdc}};
