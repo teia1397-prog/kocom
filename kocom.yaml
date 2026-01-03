@@ -6,6 +6,11 @@ uart:
   rx_pin: GPIO01
   tx_pin: GPIO02
 
+external_components:
+  - source: github://teia1397-prog/espcomponents@latest
+    components: [ uartex ]
+    refresh: always  
+    
 uartex:
   rx_timeout: 10ms
   tx_delay: 50ms
