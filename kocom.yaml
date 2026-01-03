@@ -1,10 +1,35 @@
+substitutions:
+  name: "esp-kocom"
+  friendly_name: "ESP Kocom"
+
+esp32:
+  board: m5stack-atoms3
+  variant: esp32s3
+  framework:
+    type: arduino
+
+packages:
+ remote:
+   refresh: always
+   url: https://github.com/eigger/espcomponents/
+   files:
+     - packages/device_base.yaml
+     - packages/esp32.yaml
+     #- packages/wallpad/kocom/kocom.yaml
+
+# Atom S3 하단 Grove 포트 설정 (G2=TX, G1=RX)
+#uart:
+#  tx_pin: GPIO02
+#  rx_pin: GPIO01
+
+#코콤 월패드 시작
 uart:
   baud_rate: 9600
   data_bits: 8
   parity: NONE
   stop_bits: 1
-  rx_pin: GPIO22
-  tx_pin: GPIO19
+  rx_pin: GPIO01
+  tx_pin: GPIO02
 
 external_components:
   - source: github://eigger/espcomponents@latest
@@ -574,6 +599,3 @@ button:
 # Payload: 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11
 # Checksum: <sum of all fields modulo 256>
 # Footer: 0x0D, 0x0D
-
-
-
