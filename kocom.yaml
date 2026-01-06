@@ -21,6 +21,12 @@ external_components:
   - source: github://eigger/espcomponents@latest
     components: [uartex]
     refresh: always
+    
+#아래 설명
+# 10ms 동안 데이터 안 오면 수신 끝
+# 보내기 전에 50ms 쉬기
+# 500ms 안에 응답 없으면 실패
+# 최대 3번 다시 보내기
 
 uartex:
   rx_timeout: 10ms
@@ -28,6 +34,8 @@ uartex:
   tx_timeout: 500ms
   tx_retry_cnt: 3
 
+# 패킷의 앞뒤 표시
+#AA 55 | 내용들... | 체크섬 | 0D 0D
   rx_header: [0xAA, 0x55]
   rx_footer: [0x0D, 0x0D]
   tx_header: [0xAA, 0x55]
@@ -191,10 +199,52 @@ light:
       data: [0x30, 0xbc, 0x00, 0x0e, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
 
-  # 옷방 조명 (Room 4)
+  # 알파룸 (Room 4)
+# 전등 상태 확인과 제어용 패킷 설명
+
+# 패킷 흐름 예시 (전등 ON 시)
+# 1. [W] AA 55 30 BC 00 0E 04 00 00 00 FF 00 00 00 00 00 00 FD 0D 0D → 전송 패킷 (command_on)
+# 2. [R] AA 55 30 DC 00 00 0E 04 00 FF 00 00 00 00 00 00 1D 0D 0D → 첫 번째 응답 패킷 (ACK/상태)
+# 3. [R] AA 55 30 BC 00 01 00 0E 04 00 FF 00 00 00 00 00 00 FE 0D 0D → 내부 재전송/보정 패킷
+# 4. [R] AA 55 30 DC 00 0E 04 01 00 00 FF 00 00 00 00 00 00 00 1E 0D 0D → 최종 상태 패킷 (state 확인)
+
+#off시
+
+# state 확인용 패킷 예시 (마지막 DC 패킷)
+# [R] AA 55 / 30 DC 00 0E 04 /   01 00 00    /   FF   / 00 00 00 00 00 00 00 /      1E          / 0D 0D
+#    header /  응답패킷 data  / 내부 예약 필드 / ON/OFF /      확인 바이트     / padding/checksum  / footer
+
+# state.data
+# 30      → 장치 코드
+# DC      → 장치 상태 응답 (ON/OFF)
+# 00 0E   → 패킷 전체 길이 계산용
+# 04      → 방 번호 (4번 방)
+# mask
+# 0xFF    → 완전 비교, 0xF0 → 상위 4비트만 비교
+
+# state_ 설명
+# state.data
+# 30      → 장치 코드
+# DC      → 장치 상태 응답 (ON/OFF)
+# 00 0E   → 패킷 전체 길이 계산용
+# 04      → 방 번호 (4번 방)
+# mask
+# 0xFF    → 완전 비교, 0xF0 → 상위 4비트만 비교
+
+# state_on / state_off
+# offset = 8 → state.data 시작 기준으로 8번째 바이트를 확인
+# offset 위치 = 실제 ON/OFF 값(0xFF=ON, 0x00=OFF)
+# 8번재 패킷이 ff면 on / 00 이면 off 확인 
+#[R]AA 55 / 30 DC 00 0E 04 / 01 00 00 / FF / 00 00 00 00 00 00 00 1E / 0D 0D(21) (두번째 응답 패킷)
+#         / 0  1  2  3  4  / 5  6  7  / 8  /
+
+# command_on
+# 첫 번째 전송 패킷 사용 (BC 명령)
+# [W]AA 55 / 30 BC 00 0E 04 00 00 00 FF 00 00 00 00 00 00 00 / FD / 0D0D(21)
   - platform: uartex
-    name: "Dressing Room Light"
-    id: dressing_room_light
+    name: "Alpha Room Light"
+    id: Alpha_room_light
+  
     state:
       data: [0x30, 0xd0, 0x00, 0x0e, 0x04]
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
@@ -204,9 +254,12 @@ light:
     state_off:
       offset: 8
       data: [0x00]
+
+   # [W]AA 55 / 30 BC 00 0E 04 00 00 00 FF 00 00 00 00 00 00 00 / FD / 0D0D(21)
     command_on:
       data: [0x30, 0xbc, 0x00, 0x0e, 0x04, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
+   # [W]AA 55 / 30 BC 00 0E 04 00 00 00 00 00 00 00 00 00 00 00 / FE / 0D0D(21)
     command_off:
       data: [0x30, 0xbc, 0x00, 0x0e, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
