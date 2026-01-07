@@ -969,18 +969,18 @@ climate:
       offset: 9
       data: [0x00]
     command_heat: !lambda |-
-      uint8_t target = id(master_bedroom_heater).target_temperature;
+      uint8_t target = id(master_room_heater).target_temperature;
       uint8_t preset = id(master_bedroom_heater).preset == climate::CLIMATE_PRESET_AWAY ? 0x01 : 0x00;
       return {{0x30, 0xbc, 0x00, 0x36, 0x01, 0x01, 0x00, 0x00, 0x11, preset, target, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_preset_none: !lambda |-
-      uint8_t target = id(master_bedroom_heater).target_temperature;
+      uint8_t target = id(master_room_heater).target_temperature;
       return {{0x30, 0xbc, 0x00, 0x36, 0x01, 0x01, 0x00, 0x00, 0x11, 0x00, target, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_preset_away: !lambda |-
-      uint8_t target = id(master_bedroom_heater).target_temperature;
+      uint8_t target = id(master_room_heater).target_temperature;
       return {{0x30, 0xbc, 0x00, 0x36, 0x01, 0x01, 0x00, 0x00, 0x11, 0x01, target, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_temperature: !lambda |-
       uint8_t target = x;
-      uint8_t preset = id(master_bedroom_heater).preset == climate::CLIMATE_PRESET_AWAY ? 0x01 : 0x00;
+      uint8_t preset = id(master_room_heater).preset == climate::CLIMATE_PRESET_AWAY ? 0x01 : 0x00;
       return {{0x30, 0xbc, 0x00, 0x36, 0x01, 0x01, 0x00, 0x00, 0x11, preset, target, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_state:
       - logger.log:
