@@ -81,8 +81,8 @@ light:
 
   # 안방 조명 1 (Room 1)
   - platform: uartex
-    name: "Master Bedroom Light 1"
-    id: master_bedroom_light_1
+    name: "Master Room Light 1"
+    id: master_room_light_1
     state:
       data: [0x30, 0xd0, 0x00, 0x0e, 0x01]
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
@@ -101,8 +101,8 @@ light:
 
   # 안방 조명 2 (Room 1)
   - platform: uartex
-    name: "Master Bedroom Light 2"
-    id: master_bedroom_light_2
+    name: "Master Room Light 2"
+    id: master_room_light_2
     state:
       data: [0x30, 0xd0, 0x00, 0x0e, 0x01]
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
