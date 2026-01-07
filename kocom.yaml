@@ -970,7 +970,7 @@ climate:
       data: [0x00]
     command_heat: !lambda |-
       uint8_t target = id(master_room_heater).target_temperature;
-      uint8_t preset = id(master_bedroom_heater).preset == climate::CLIMATE_PRESET_AWAY ? 0x01 : 0x00;
+      uint8_t preset = id(master_room_heater).preset == climate::CLIMATE_PRESET_AWAY ? 0x01 : 0x00;
       return {{0x30, 0xbc, 0x00, 0x36, 0x01, 0x01, 0x00, 0x00, 0x11, preset, target, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_preset_none: !lambda |-
       uint8_t target = id(master_room_heater).target_temperature;
@@ -1149,7 +1149,7 @@ climate:
       return {{0x30, 0xbc, 0x00, 0x36, 0x04, 0x01, 0x00, 0x00, 0x11, preset, target, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_state:
       - logger.log:
-          format: "안방 보일러 상태 변경: 모드=%s, 목표온도=%.0f°C, 현재온도=%.0f°C, 프리셋=%s"
+          format: "알파룸 보일러 상태 변경: 모드=%s, 목표온도=%.0f°C, 현재온도=%.0f°C, 프리셋=%s"
           args:
             - 'x.mode == CLIMATE_MODE_HEAT ? "난방" : x.mode == CLIMATE_MODE_OFF ? "꺼짐" : "알수없음"'
             - "x.target_temperature"
