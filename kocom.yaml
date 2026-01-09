@@ -446,7 +446,7 @@ switch:
       # 현재 조명 상태를 유지하면서 환기팬만 켜기
       - if:
           condition:
-            light.is_on: master_bathroom_light_1
+            light.is_on: room_2_light
           then:
             - if:
                 condition:
@@ -643,7 +643,7 @@ switch:
       # 현재 조명 상태를 유지하면서 환기팬만 끄기
       - if:
           condition:
-            light.is_on: master_bathroom_light_1
+            light.is_on: room_2_light
           then:
             - if:
                 condition:
