@@ -994,10 +994,10 @@ climate:
       data: [0x30, 0xbc, 0x00, 0x36, 0x01, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     update_interval: 2h
-  # 옷방 난방 (Room 3) - 프리셋 모드로만 제어 (전원 버튼 없음)
+  # 사라 난방 (Room 3) - 프리셋 모드로만 제어 (전원 버튼 없음)
   - platform: uartex
-    name: "Room 2 Heater"
-    id: room2_heater
+    name: "Room 3 Heater"
+    id: room3_heater
     visual:
       min_temperature: 10 °C
       max_temperature: 30 °C
@@ -1026,18 +1026,18 @@ climate:
       offset: 9
       data: [0x00]
     command_heat: !lambda |-
-      uint8_t target = id(room2_heater).target_temperature;
-      uint8_t preset = id(room2_heater).preset == climate::CLIMATE_PRESET_AWAY ? 0x01 : 0x00;
+      uint8_t target = id(room3_heater).target_temperature;
+      uint8_t preset = id(room3_heater).preset == climate::CLIMATE_PRESET_AWAY ? 0x01 : 0x00;
       return {{0x30, 0xbc, 0x00, 0x36, 0x03, 0x01, 0x00, 0x00, 0x11, preset, target, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_preset_none: !lambda |-
-      uint8_t target = id(room2_heater).target_temperature;
+      uint8_t target = id(room3_heater).target_temperature;
       return {{0x30, 0xbc, 0x00, 0x36, 0x03, 0x01, 0x00, 0x00, 0x11, 0x00, target, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_preset_away: !lambda |-
-      uint8_t target = id(room2_heater).target_temperature;
+      uint8_t target = id(room3_heater).target_temperature;
       return {{0x30, 0xbc, 0x00, 0x36, 0x03, 0x01, 0x00, 0x00, 0x11, 0x01, target, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_temperature: !lambda |-
       uint8_t target = x;
-      uint8_t preset = id(room2_heater).preset == climate::CLIMATE_PRESET_AWAY ? 0x01 : 0x00;
+      uint8_t preset = id(room3_heater).preset == climate::CLIMATE_PRESET_AWAY ? 0x01 : 0x00;
       return {{0x30, 0xbc, 0x00, 0x36, 0x03, 0x01, 0x00, 0x00, 0x11, preset, target, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_state:
       - logger.log:
