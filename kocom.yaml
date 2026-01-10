@@ -1209,7 +1209,8 @@ binary_sensor:
     # device_class에 Elevator Arrive는 없으므로 generic이나 motion 추천
     device_class: motion 
     state:
-      data: [0x30, 0xbd, 0x00, 0x44, 0x00]
+      data: [0x30, 0xb0, 0x00, 0x44, 0x00, 0x01, 0x00]
+      mask: [0xff, 0xf0, 0xff, 0xff, 0xff, 0xff, 0xff]
     state_on:
       offset: 8
       data: [0x03]
@@ -1264,3 +1265,24 @@ text_sensor:
       if (check_value(8, 0x02, data, len)) return "상승";
       if (check_value(8, 0x03, data, len)) return "도착";
       return "Unknown";
+
+
+#엘리베이터 도착했을때 나오는 패킷
+#ESP Kocom Log [R]AA55 30 BE 00 44 00 01 00 01 03 0000000000000037 0D0D(21)로 변경되었습니다.
+#오전 2:21:59 - 2초 후
+#ESP Kocom Log [R]AA55 30 BD 00 44 00 01 00 01 03 0000000000000036 0D0D(21)로 변경되었습니다.
+#오전 2:21:59 - 2초 후
+#ESP Kocom Log [R]AA55 30 BC 00 44 00 01 00 01 03 0000000000000035 0D0D(21)로 변경되었습니다.
+#오전 2:21:58 - 2초 후
+#ESP Kocom Log [R]AA55 30 BE 00 44 00 01 00 00 03 0000000000000036 0D0D(21)로 변경되었습니다.
+#오전 2:21:58 - 2초 후
+#ESP Kocom Log [R]AA55 30 BD 00 44 00 01 00 00 03 0000000000000035 0D0D(21)로 변경되었습니다.
+#오전 2:21:58 - 2초 후
+#ESP Kocom Log [R]AA55 30 BC 00 44 00 01 00 00 03 0000000000000034 0D0D(21)로 변경되었습니다.
+#오전 2:21:57 - 2초 후
+
+#--아래는 전송 신호
+#ESP Kocom Log [R]AA55 30 DC 00 44 00 01 00 01 03 00000000000000550D0D(21)로 변경되었습니다.
+#오전 2:21:23 - 2초 후
+#ESP Kocom Log [W]AA55 30 BC 00 01 00 44 00 01 03 00000000000000350D0D(21)로 변경되었습니다.
+#오전 2:21:22 - 2초 후
