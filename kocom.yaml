@@ -1203,6 +1203,23 @@ binary_sensor:
     on_release:
       - logger.log: "🚪 현관문이 닫혔습니다!"
 
+  - platform: uartex
+    name: "Elevator Arrive"
+    icon: "mdi:elevator"
+    # device_class에 Elevator Arrive는 없으므로 generic이나 motion 추천
+    device_class: motion 
+    state:
+      data: [0x30, 0xbd, 0x00, 0x44, 0x00]
+    state_on:
+      offset: 8
+      data: [0x33]
+    # state_off를 삭제하는 대신, 5초 뒤에 자동으로 꺼지게 설정
+    filters:
+      - delayed_off: 5s
+    on_press:
+      - logger.log: "🛗 엘리베이터가 도착했습니다!"
+      
+
 button:
   # 엘리베이터 호출
   - platform: uartex
