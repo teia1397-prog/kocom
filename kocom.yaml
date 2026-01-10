@@ -1203,35 +1203,23 @@ binary_sensor:
     on_release:
       - logger.log: "🚪 현관문이 닫혔습니다!"
 
-# 1. 화면에 표시될 센서 (가상 센서)
-binary_sensor:
-  - platform: template
+  - platform: uartex
     name: "Elevator Arrive"
-    id: elevator_status
-    device_class: motion
-
-# 2. 패킷을 감시해서 스크립트 실행
-uartex:
-  on_data:
-    # Index 8 자리에 0x03이 있는지 직접 검사 (offset 8 역할)
-    - data: [0x30, 0xB0, 0x00, 0x44, 0x00, 0x01, 0x00, 0x00, 0x03]
-      mask: [0xFF, 0xF0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0xFF]
-      then:
-        - script.execute: elevator_timer
-
-# 3. 5초 타이머 로직 (여기서 강제 OFF를 수행)
-script:
-  - id: elevator_timer
-    mode: restart
-    then:
-      - binary_sensor.template.publish:
-          id: elevator_status
-          state: ON
-      - logger.log: "🛗 엘리베이터 도착 감지 (03)"
-      - delay: 5s
-      - binary_sensor.template.publish:
-          id: elevator_status
-          state: OFF
+    icon: "mdi:elevator"
+    # device_class에 Elevator Arrive는 없으므로 generic이나 motion 추천
+    device_class: motion 
+    state:
+      data: [0x30, 0xb0, 0x00, 0x44, 0x00, 0x01, 0x00]
+      mask: [0xff, 0xf0, 0xff, 0xff, 0xff, 0xff, 0xff]
+    state_on:
+      offset: 8
+      data: [0x03]
+    # state_off를 삭제하는 대신, 5초 뒤에 자동으로 꺼지게 설정
+    filters:
+      - throttle: 10s
+      - delayed_off: 5s
+    on_press:
+      - logger.log: "🛗 엘리베이터가 도착했습니다!"
       
 button:
   # 엘리베이터 호출
