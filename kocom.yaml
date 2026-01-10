@@ -1212,7 +1212,7 @@ binary_sensor:
       data: [0x30, 0xbd, 0x00, 0x44, 0x00]
     state_on:
       offset: 8
-      data: [0x33]
+      data: [0x03]
     # state_off를 삭제하는 대신, 5초 뒤에 자동으로 꺼지게 설정
     filters:
       - delayed_off: 5s
