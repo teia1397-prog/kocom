@@ -1211,6 +1211,31 @@ button:
     command_on:
       data: [0x30, 0xbc, 0x00, 0x01, 0x00, 0x44, 0x00, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
+      
+sensor:
+  - platform: uartex
+    name: "Elevator Floors"
+    icon: "mdi:elevator"
+    unit_of_measurement: '층'
+    state: 
+      data: [0x30, 0xd0, 0x00, 0x01, 0x00, 0x44, 0x00]
+      mask: [0xff, 0xf0, 0xff, 0xff, 0xff, 0xff, 0xff]
+    state_number:
+      offset: 9
+      
+text_sensor:
+  - platform: uartex
+    name: "Elevator Direction"
+    icon: "mdi:elevator"
+    state: 
+      data: [0x30, 0xd0, 0x00, 0x01, 0x00, 0x44, 0x00]
+      mask: [0xff, 0xf0, 0xff, 0xff, 0xff, 0xff, 0xff]
+    lambda: |-
+      if (check_value(8, 0x00, data, len)) return "정지";
+      if (check_value(8, 0x01, data, len)) return "하강";
+      if (check_value(8, 0x02, data, len)) return "상승";
+      if (check_value(8, 0x03, data, len)) return "도착";
+      return "Unknown";
 
   # 전원 공급선만 활성화 (조명은 켜지지 않음)
   - platform: template
