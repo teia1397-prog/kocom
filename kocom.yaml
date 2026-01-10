@@ -1194,10 +1194,10 @@ binary_sensor:
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
     state_on:
       offset: 8
-      data: [0x00] # 문 열림 (값 반전)
+      data: [0x01] # 문 열림 (값 반전)
     state_off:
       offset: 8
-      data: [0x01] # 문 닫힘 (값 반전)
+      data: [0x00] # 문 닫힘 (값 반전)
     on_press:
       - logger.log: "� 현관문이 종열렸습니다!"
     on_release:
