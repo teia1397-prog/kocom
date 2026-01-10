@@ -1203,23 +1203,33 @@ binary_sensor:
     on_release:
       - logger.log: "🚪 현관문이 닫혔습니다!"
 
-  - platform: uartex
+uartex:
+  on_data:
+    # 9번째 칸(Index 8) 자리에 0x03을 직접 넣었습니다.
+    # [0]   [1]   [2]   [3]   [4]   [5]   [6]   [7]   [8]
+    # 30    B0    00    44    00    01    00    00    03
+    - data: [0x30, 0xB0, 0x00, 0x44, 0x00, 0x01, 0x00, 0x00, 0x03]
+      mask: [0xFF, 0xF0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0xFF]
+      then:
+        - script.execute: elevator_timer
+
+binary_sensor:
+  - platform: template
     name: "Elevator Arrive"
-    icon: "mdi:elevator"
-    # device_class에 Elevator Arrive는 없으므로 generic이나 motion 추천
-    device_class: motion 
-    state:
-      data: [0x30, 0xb0, 0x00, 0x44, 0x00, 0x01, 0x00]
-      mask: [0xff, 0xf0, 0xff, 0xff, 0xff, 0xff, 0xff]
-    state_on:
-      offset: 8
-      data: [0x03]
-    on_press:
-      - logger.log: "🛗 엘리베이터가 도착했습니다!"
-      - delay: 5s
-      # 센서의 상태를 강제로 OFF로 퍼블리시 (중요)
+    id: elevator_status
+    device_class: motion
+
+script:
+  - id: elevator_timer
+    mode: restart
+    then:
       - binary_sensor.template.publish:
-          id: elevator_arrive_sensor
+          id: elevator_status
+          state: ON
+      - logger.log: "🛗 엘리베이터가 도착했습니다! (상태값: 03)"
+      - delay: 5s
+      - binary_sensor.template.publish:
+          id: elevator_status
           state: OFF
       
 button:
