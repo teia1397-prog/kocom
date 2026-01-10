@@ -1214,14 +1214,14 @@ binary_sensor:
     state_on:
       offset: 8
       data: [0x03]
-    # state_off를 삭제하는 대신, 5초 뒤에 자동으로 꺼지게 설정
-    filters:
-      - throttle: 10s
-      - delayed_off: 5s
     on_press:
       - logger.log: "🛗 엘리베이터가 도착했습니다!"
+      - delay: 5s
+      # 센서의 상태를 강제로 OFF로 퍼블리시 (중요)
+      - binary_sensor.template.publish:
+          id: elevator_arrive_sensor
+          state: OFF
       
-
 button:
   # 엘리베이터 호출
   - platform: uartex
