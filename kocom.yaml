@@ -1170,10 +1170,10 @@ binary_sensor:
     name: "Doorbell"
     icon: "mdi:doorbell"
     device_class: sound
+    len: 21
     state:
       data: [0x30, 0xbc, 0x00, 0x60, 0x00] # 모션/도어벨 디바이스
       mask: [0xff, 0xff, 0xff, 0xff, 0xff]
-      len: 21
     state_on:
       offset: 8
       data: [0x01]
