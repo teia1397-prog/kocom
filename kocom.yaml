@@ -1095,7 +1095,7 @@ climate:
       return {{0x30, 0xbc, 0x00, 0x36, 0x02, 0x01, 0x00, 0x00, 0x11, preset, target, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_state:
       - logger.log:
-          format: "세나나방 보일러 상태 변경: 모드=%s, 목표온도=%.0f°C, 현재온도=%.0f°C, 프리셋=%s"
+          format: "세나방 보일러 상태 변경: 모드=%s, 목표온도=%.0f°C, 현재온도=%.0f°C, 프리셋=%s"
           args:
             - 'x.mode == CLIMATE_MODE_HEAT ? "난방" : x.mode == CLIMATE_MODE_OFF ? "꺼짐" : "알수없음"'
             - "x.target_temperature"
@@ -1151,14 +1151,23 @@ climate:
       uint8_t target = x;
       uint8_t preset = id(Alpha_room_heater).preset == climate::CLIMATE_PRESET_AWAY ? 0x01 : 0x00;
       return {{0x30, 0xbc, 0x00, 0x36, 0x04, 0x01, 0x00, 0x00, 0x11, preset, target, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
+#    on_state:
+#      - logger.log:
+#          format: "알파룸 보일러 상태 변경: 모드=%s, 목표온도=%.0f°C, 현재온도=%.0f°C, 프리셋=%s"
+#          args:
+#            - 'x.mode == CLIMATE_MODE_HEAT ? "난방" : x.mode == CLIMATE_MODE_OFF ? "꺼짐" : "알수없음"'
+#            - "x.target_temperature"
+#            - "x.current_temperature"
+#            - 'x.preset == CLIMATE_PRESET_AWAY ? "외출" : "일반"'
     on_state:
       - logger.log:
-          format: "알파룸 보일러 상태 변경: 모드=%s, 목표온도=%.0f°C, 현재온도=%.0f°C, 프리셋=%s"
+          format: "알파룸 보일러 상태 변경: 모드=%s, 목표온도=%.1f°C, 현재온도=%.1f°C, 프리셋=%s"
           args:
-            - 'x.mode == CLIMATE_MODE_HEAT ? "난방" : x.mode == CLIMATE_MODE_OFF ? "꺼짐" : "알수없음"'
+            # 문자열 리턴 뒤에 .c_str()을 붙여야 로그에 정확히 찍힙니다.
+            - '(x.mode == CLIMATE_MODE_HEAT ? "난방" : (x.mode == CLIMATE_MODE_OFF ? "꺼짐" : "알수없음"))'
             - "x.target_temperature"
             - "x.current_temperature"
-            - 'x.preset == CLIMATE_PRESET_AWAY ? "외출" : "일반"'
+            - '(x.preset == CLIMATE_PRESET_AWAY ? "외출" : "일반")'
     command_update: 
       data: [0x30, 0xbc, 0x00, 0x36, 0x04, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
