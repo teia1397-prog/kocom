@@ -1226,8 +1226,6 @@ binary_sensor:
       data: [0x30, 0xBC, 0x00, 0x44, 0x00, 0x01, 0x00, 0x01, 0x03]
       # 두 번째 바이트(BC~BE)는 무시(F0), 도착 상태값(8번째 01)은 정확히 체크(FF)
       mask: [0xFF, 0xF0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
-    filters:
-      - delayed_off: 5s
     on_press:
       - logger.log: "🛗 엘리베이터가 도착했습니다!"
 
