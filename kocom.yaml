@@ -1217,16 +1217,7 @@ binary_sensor:
     on_release:
       - logger.log: "🚪 현관문이 닫혔습니다!"
 
-  # 전원 공급선만 활성화 (조명은 켜지지 않음)
-  - platform: template
-    name: "Power Supply Activate"
-    icon: "mdi:power-plug"
-    on_press:
-      # 전원 공급선만 활성화 - Room ID를 0x00으로 변경하여 일괄소등 방지
-      - uartex.write:
-          data: [0x30, 0xbc, 0x00, 0x0e, 0x00, 0x01, 0x00, 0x66, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-          ack: [0x30, 0xdc]
-      - logger.log: "전원 공급선 활성화 (일괄소등 방지 적용)"
+
 
 
 #엘리베이터 도착했을때 나오는 패킷
@@ -1264,7 +1255,17 @@ button:
     command_on:
       data: [0x30, 0xbc, 0x00, 0x01, 0x00, 0x44, 0x00, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-      
+
+      # 전원 공급선만 활성화 (조명은 켜지지 않음)
+  - platform: template
+    name: "Power Supply Activate"
+    icon: "mdi:power-plug"
+    on_press:
+      # 전원 공급선만 활성화 - Room ID를 0x00으로 변경하여 일괄소등 방지
+      - uartex.write:
+          data: [0x30, 0xbc, 0x00, 0x0e, 0x00, 0x01, 0x00, 0x66, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+          ack: [0x30, 0xdc]
+      - logger.log: "전원 공급선 활성화 (일괄소등 방지 적용)"
 
       
 sensor:
