@@ -1217,7 +1217,16 @@ binary_sensor:
     on_release:
       - logger.log: "🚪 현관문이 닫혔습니다!"
 
-
+  # 전원 공급선만 활성화 (조명은 켜지지 않음)
+  - platform: template
+    name: "Power Supply Activate"
+    icon: "mdi:power-plug"
+    on_press:
+      # 전원 공급선만 활성화 - Room ID를 0x00으로 변경하여 일괄소등 방지
+      - uartex.write:
+          data: [0x30, 0xbc, 0x00, 0x0e, 0x00, 0x01, 0x00, 0x66, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+          ack: [0x30, 0xdc]
+      - logger.log: "전원 공급선 활성화 (일괄소등 방지 적용)"
 
 
 #엘리베이터 도착했을때 나오는 패킷
@@ -1234,26 +1243,17 @@ binary_sensor:
 #ESP Kocom Log [R]AA55 30 BC 00 44 00 01 00 00 03 0000000000000034 0D0D(21)로 변경되었습니다.
 #오전 2:21:57 - 2초 후
 
-binary_sensor:
   - platform: uartex
     name: "Elevator Arrive"
     icon: mdi:elevator
     device_class: motion
     state:
-      # 두 번째 값을 0xB0로 두고 마스크로 뒷자리(C,D,E)를 무시
       data: [0x30, 0xB0, 0x00, 0x44, 0x00, 0x00, 0x00, 0x00, 0x03]
-      # 0xF0 마스크: 앞자리 'B'만 맞으면 통과 (BC, BD, BE 모두 허용)
-      mask: [0xFF, 0xF0, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0xFF]
+      mask: [0xff, 0xf0, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0xff]
     filters:
       - delayed_off: 5s
-    on_state:
-      then:
-        - if:
-            condition:
-              binary_sensor.is_on: "Elevator Arrive"
-            then:
-              - logger.log: "🛗 엘리베이터가 도착했습니다!"
-
+    on_press:
+      - logger.log: "🛗 엘리베이터가 도착했습니다!"
 
 
 button:
@@ -1265,16 +1265,6 @@ button:
       data: [0x30, 0xbc, 0x00, 0x01, 0x00, 0x44, 0x00, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
       
-# 전원 공급선만 활성화 (조명은 켜지지 않음)
-  - platform: template
-    name: "Power Supply Activate"
-    icon: "mdi:power-plug"
-    on_press:
-      # 전원 공급선만 활성화 - Room ID를 0x00으로 변경하여 일괄소등 방지
-      - uartex.write:
-          data: [0x30, 0xbc, 0x00, 0x0e, 0x00, 0x01, 0x00, 0x66, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-          ack: [0x30, 0xdc]
-      - logger.log: "전원 공급선 활성화 (일괄소등 방지 적용)"
 
       
 sensor:
@@ -1301,7 +1291,6 @@ text_sensor:
       if (check_value(8, 0x02, data, len)) return "상승";
       if (check_value(8, 0x03, data, len)) return "도착";
       return "Unknown";
-
 
 
 #엘리베이터 도착했을때 나오는 패킷
