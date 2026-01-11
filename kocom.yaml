@@ -1178,6 +1178,12 @@ climate:
       ack: [0x30, 0xdc]
     update_interval: 2h
 
+#for 엘리베이터 도착
+globals:
+  - id: elevator_text_state
+    type: std::string
+    initial_value: '"대기"'
+    
 binary_sensor:
   # 현관 초인종 감지 (다양한 패턴 시도)
   - platform: uartex
