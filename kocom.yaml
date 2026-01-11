@@ -1217,25 +1217,26 @@ binary_sensor:
     on_release:
       - logger.log: "🚪 현관문이 닫혔습니다!"
 
-  - platform: uartex
-    name: "Elevator Arrive"
-    icon: mdi:elevator
-    device_class: door
-    state:
-      data: [0x30, 0xb0, 0x00, 0x44, 0x00]
-      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
-    state_on:
-      offset: 8
-      data: [0x03]
-    # 문제 1 해결: 5초 후 자동으로 상태를 '닫힘'으로 리셋
-    filters:
-      - delayed_off: 5s
-    # 문제 2 해결: uartex에서 지원하는 표준 트리거인 on_press 사용
-    on_press:
-      then:
-        - logger.log:
-            format: "🛗 엘리베이터가 도착했습니다!"
-            level: INFO
+#아래 도착오기는 옴
+#  - platform: uartex
+#    name: "Elevator Arrive"
+#    icon: mdi:elevator
+#    device_class: door
+#    state:
+#      data: [0x30, 0xb0, 0x00, 0x44, 0x00]
+#      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
+#    state_on:
+#      offset: 8
+#      data: [0x03]
+#    # 문제 1 해결: 5초 후 자동으로 상태를 '닫힘'으로 리셋
+#    filters:
+#      - delayed_off: 5s
+#    # 문제 2 해결: uartex에서 지원하는 표준 트리거인 on_press 사용
+#    on_press:
+#      then:
+#        - logger.log:
+#            format: "🛗 엘리베이터가 도착했습니다!"
+#            level: INFO
 
 #엘리베이터 도착했을때 나오는 패킷
 #ESP Kocom Log [R]AA55 30 BE 00 44 00 01 00 01 03 0000000000000037 0D0D(21)로 변경되었습니다.
@@ -1251,6 +1252,30 @@ binary_sensor:
 #ESP Kocom Log [R]AA55 30 BC 00 44 00 01 00 00 03 0000000000000034 0D0D(21)로 변경되었습니다.
 #오전 2:21:57 - 2초 후
 
+  - platform: uartex
+    internal: true
+    id: elevator_raw
+    state:
+      data: [0x30, 0xb0, 0x00, 0x44, 0x00]
+      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
+    state_on:
+      offset: 8
+      data: [0x03]
+    on_press:
+      then:
+        - lambda: 'id(elevator_text_state) = "도착";'
+        - component.update: elevator_display_sensor
+        - delay: 5s
+        - lambda: 'id(elevator_text_state) = "대기";'
+        - component.update: elevator_display_sensor
+
+text_sensor:
+  - platform: template
+    name: "Elevator Status"
+    id: elevator_display_sensor
+    icon: mdi:elevator
+    lambda: |-
+      return id(elevator_text_state);
 
 button:
   # 엘리베이터 호출
@@ -1271,6 +1296,7 @@ button:
           data: [0x30, 0xbc, 0x00, 0x0e, 0x00, 0x01, 0x00, 0x66, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
           ack: [0x30, 0xdc]
       - logger.log: "전원 공급선 활성화 (일괄소등 방지 적용)"
+
 
       
 #sensor:
