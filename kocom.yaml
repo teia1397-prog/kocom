@@ -1178,7 +1178,7 @@ climate:
       ack: [0x30, 0xdc]
     update_interval: 2h
 
-#for 엘리베이터 도착
+#for 엘리베이터 도착 문구
 globals:
   - id: elevator_text_state
     type: std::string
@@ -1271,7 +1271,7 @@ binary_sensor:
       then:
         - lambda: 'id(elevator_text_state) = "도착";'
         - component.update: elevator_display_sensor
-        - delay: 5s
+        - delay: 10s
         - lambda: 'id(elevator_text_state) = "대기";'
         - component.update: elevator_display_sensor
 
