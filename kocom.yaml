@@ -1217,7 +1217,7 @@ binary_sensor:
     on_release:
       - logger.log: "🚪 현관문이 닫혔습니다!"
 
-  - platform: uart
+  - platform: uartex
     name: "Elevator Arrive"
     icon: mdi:elevator
     device_class: motion
