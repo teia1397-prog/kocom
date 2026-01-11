@@ -1268,30 +1268,30 @@ button:
       - logger.log: "전원 공급선 활성화 (일괄소등 방지 적용)"
 
       
-sensor:
-  - platform: uartex
-    name: "Elevator Floors"
-    icon: "mdi:elevator"
-    unit_of_measurement: '층'
-    state: 
-      data: [0x30, 0xd0, 0x00, 0x01, 0x00, 0x44, 0x00]
-      mask: [0xff, 0xf0, 0xff, 0xff, 0xff, 0xff, 0xff]
-    state_number:
-      offset: 9
+#sensor:
+#  - platform: uartex
+#    name: "Elevator Floors"
+#    icon: "mdi:elevator"
+#    unit_of_measurement: '층'
+#    state: 
+#      data: [0x30, 0xd0, 0x00, 0x01, 0x00, 0x44, 0x00]
+#      mask: [0xff, 0xf0, 0xff, 0xff, 0xff, 0xff, 0xff]
+#    state_number:
+#      offset: 9
       
-text_sensor:
-  - platform: uartex
-    name: "Elevator Direction"
-    icon: "mdi:elevator"
-    state: 
-      data: [0x30, 0xd0, 0x00, 0x01, 0x00, 0x44, 0x00]
-      mask: [0xff, 0xf0, 0xff, 0xff, 0xff, 0xff, 0xff]
-    lambda: |-
-      if (check_value(8, 0x00, data, len)) return "정지";
-      if (check_value(8, 0x01, data, len)) return "하강";
-      if (check_value(8, 0x02, data, len)) return "상승";
-      if (check_value(8, 0x03, data, len)) return "도착";
-      return "Unknown";
+#text_sensor:
+#  - platform: uartex
+#    name: "Elevator Direction"
+#    icon: "mdi:elevator"
+#    state: 
+#      data: [0x30, 0xd0, 0x00, 0x01, 0x00, 0x44, 0x00]
+#      mask: [0xff, 0xf0, 0xff, 0xff, 0xff, 0xff, 0xff]
+#    lambda: |-
+#      if (check_value(8, 0x00, data, len)) return "정지";
+#      if (check_value(8, 0x01, data, len)) return "하강";
+#      if (check_value(8, 0x02, data, len)) return "상승";
+#      if (check_value(8, 0x03, data, len)) return "도착";
+#      return "Unknown";
 
 
 #엘리베이터 도착했을때 나오는 패킷
