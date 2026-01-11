@@ -1217,8 +1217,19 @@ binary_sensor:
     on_release:
       - logger.log: "🚪 현관문이 닫혔습니다!"
 
-
-
+  - platform: uart
+    name: "Elevator Arrive"
+    icon: mdi:elevator
+    device_class: motion
+    state:
+      # 로그의 30 BE 00 44 00 01 00 01 03 순서를 따름
+      data: [0x30, 0xBC, 0x00, 0x44, 0x00, 0x01, 0x00, 0x01, 0x03]
+      # 두 번째 바이트(BC~BE)는 무시(F0), 도착 상태값(8번째 01)은 정확히 체크(FF)
+      mask: [0xFF, 0xF0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
+    filters:
+      - delayed_off: 5s
+    on_press:
+      - logger.log: "🛗 엘리베이터가 도착했습니다!"
 
 #엘리베이터 도착했을때 나오는 패킷
 #ESP Kocom Log [R]AA55 30 BE 00 44 00 01 00 01 03 0000000000000037 0D0D(21)로 변경되었습니다.
@@ -1234,18 +1245,6 @@ binary_sensor:
 #ESP Kocom Log [R]AA55 30 BC 00 44 00 01 00 00 03 0000000000000034 0D0D(21)로 변경되었습니다.
 #오전 2:21:57 - 2초 후
 
-  - platform: uart
-    name: "Elevator Arrive"
-    icon: mdi:elevator
-    device_class: motion
-    # 로그의 30 BE 00 44 00 01 00 01 03 순서를 따름
-    data: [0x30, 0xBC, 0x00, 0x44, 0x00, 0x01, 0x00, 0x01, 0x03]
-    # 두 번째 바이트(BC~BE)는 무시(F0), 도착 상태값(8번째 01)은 정확히 체크(FF)
-    mask: [0xFF, 0xF0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
-    filters:
-      - delayed_off: 5s
-    on_press:
-      - logger.log: "🛗 엘리베이터가 도착했습니다!"
 
 button:
   # 엘리베이터 호출
