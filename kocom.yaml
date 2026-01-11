@@ -1217,6 +1217,7 @@ binary_sensor:
     on_release:
       - logger.log: "🚪 현관문이 닫혔습니다!"
 
+button:
   # 전원 공급선만 활성화 (조명은 켜지지 않음)
   - platform: template
     name: "Power Supply Activate"
@@ -1243,6 +1244,7 @@ binary_sensor:
 #ESP Kocom Log [R]AA55 30 BC 00 44 00 01 00 00 03 0000000000000034 0D0D(21)로 변경되었습니다.
 #오전 2:21:57 - 2초 후
 
+binary_sensor:
   - platform: uartex
     name: "Elevator Arrive"
     icon: mdi:elevator
@@ -1252,8 +1254,14 @@ binary_sensor:
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0xff]
     filters:
       - delayed_off: 5s
-    on_press:
-      - logger.log: "🛗 엘리베이터가 도착했습니다!"
+    # on_press 대신 on_state 사용
+    on_state:
+      then:
+        - if:
+            condition:
+              binary_sensor.is_on: Elevator Arrive
+            then:
+              - logger.log: "🛗 엘리베이터가 도착했습니다!"
 
 
 button:
