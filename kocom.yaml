@@ -1217,28 +1217,6 @@ binary_sensor:
     on_release:
       - logger.log: "🚪 현관문이 닫혔습니다!"
 
-  - platform: uartex
-    name: "Elevator Arrive"
-    icon: "mdi:elevator"
-    # device_class에 Elevator Arrive는 없으므로 generic이나 motion 추천
-    device_class: motion 
-    state:
-      data: [0x30, 0xbc, 0x00, 0x44, 0x00, 0x01, 0x00, 0x01, 0x03]
-      mask: [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]
-    filters:
-      - delayed_off: 5s
-    on_press:
-      - logger.log: "🛗 엘리베이터가 도착했습니다!"
-      
-button:
-  # 엘리베이터 호출
-  - platform: uartex
-    name: "Elevator Call"
-    icon: "mdi:elevator"
-    command_on:
-      data: [0x30, 0xbc, 0x00, 0x01, 0x00, 0x44, 0x00, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-      
   # 전원 공급선만 활성화 (조명은 켜지지 않음)
   - platform: template
     name: "Power Supply Activate"
@@ -1249,6 +1227,45 @@ button:
           data: [0x30, 0xbc, 0x00, 0x0e, 0x00, 0x01, 0x00, 0x66, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
           ack: [0x30, 0xdc]
       - logger.log: "전원 공급선 활성화 (일괄소등 방지 적용)"
+
+
+#엘리베이터 도착했을때 나오는 패킷
+#ESP Kocom Log [R]AA55 30 BE 00 44 00 01 00 01 03 0000000000000037 0D0D(21)로 변경되었습니다.
+#오전 2:21:59 - 2초 후
+#ESP Kocom Log [R]AA55 30 BD 00 44 00 01 00 01 03 0000000000000036 0D0D(21)로 변경되었습니다.
+#오전 2:21:59 - 2초 후
+#ESP Kocom Log [R]AA55 30 BC 00 44 00 01 00 01 03 0000000000000035 0D0D(21)로 변경되었습니다.
+#오전 2:21:58 - 2초 후
+#ESP Kocom Log [R]AA55 30 BE 00 44 00 01 00 00 03 0000000000000036 0D0D(21)로 변경되었습니다.
+#오전 2:21:58 - 2초 후
+#ESP Kocom Log [R]AA55 30 BD 00 44 00 01 00 00 03 0000000000000035 0D0D(21)로 변경되었습니다.
+#오전 2:21:58 - 2초 후
+#ESP Kocom Log [R]AA55 30 BC 00 44 00 01 00 00 03 0000000000000034 0D0D(21)로 변경되었습니다.
+#오전 2:21:57 - 2초 후
+
+  - platform: uartex
+    name: "Elevator Arrive"
+    icon: mdi:elevator
+    device_class: motion
+    state:
+      data: [0x30, 0xB0, 0x00, 0x44, 0x00, 0x00, 0x00, 0x00, 0x03]
+      mask: [0xff, 0xf0, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0xff]
+    filters:
+      - delayed_off: 5s
+    on_press:
+      - logger.log: "🛗 엘리베이터가 도착했습니다!"
+
+
+button:
+  # 엘리베이터 호출
+  - platform: uartex
+    name: "Elevator Call"
+    icon: "mdi:elevator"
+    command_on:
+      data: [0x30, 0xbc, 0x00, 0x01, 0x00, 0x44, 0x00, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+      ack: [0x30, 0xdc]
+      
+
       
 sensor:
   - platform: uartex
