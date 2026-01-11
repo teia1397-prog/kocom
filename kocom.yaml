@@ -1227,10 +1227,15 @@ binary_sensor:
     state_on:
       offset: 8
       data: [0x03]
+    # 문제 1 해결: 5초 후 자동으로 상태를 '닫힘'으로 리셋
     filters:
-      - delayed_off: 5s  # 문제 1 해결: 5초 후 자동 닫힘
-    on_turn_on:          # 문제 2 해결: 상태 변경 시점에 실행
-      - logger.log: "🛗 엘리베이터가 도착했습니다!"
+      - delayed_off: 5s
+    # 문제 2 해결: uartex에서 지원하는 표준 트리거인 on_press 사용
+    on_press:
+      then:
+        - logger.log:
+            format: "🛗 엘리베이터가 도착했습니다!"
+            level: INFO
 
 #엘리베이터 도착했을때 나오는 패킷
 #ESP Kocom Log [R]AA55 30 BE 00 44 00 01 00 01 03 0000000000000037 0D0D(21)로 변경되었습니다.
