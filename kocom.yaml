@@ -57,7 +57,7 @@ logger:
   logs:
     uart_debug: DEBUG
     uartex: DEBUG
-light:
+
   # 안방 조명 1 (Room 1)
   #1번 전등 ON, 2번전등 OFF
   #AA 55 / 30 BC 00 01 00 0E 01 00 FF 00 00 00 00 00 00 00 FB / 0D0D
@@ -91,14 +91,14 @@ light:
     state:
       data: [0x30, 0xd0]
       mask: [0xff, 0xf0]
-    # 로그 응답(DC)의 8번째 바이트(offset 7)가 01이면 1번등 ON
+    # RX 응답 8번째 바이트(offset 7)가 상태값
     state_on: { offset: 7, data: [0x01] }
     state_off: { offset: 7, data: [0x00] }
     on_turn_on:
       then:
         - lambda: |-
-            // 8번째 바이트에 0x01 (ON), 9번째에 2번등 상태 유지
             uint8_t l2 = id(master_room_light_2).remote_values.is_on() ? 0x01 : 0x00;
+            // 8번째 바이트(L1), 9번째 바이트(L2)에 0x01을 배치
             uint8_t cs = (l2 == 0x01) ? 0xFA : 0xFB;
             uint8_t p[21] = {0xAA, 0x55, 0x30, 0xBC, 0x00, 0x01, 0x00, 0x01, l2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, cs, 0x0D, 0x0D};
             id(uart_bus).write_array(p, 21);
@@ -117,7 +117,7 @@ light:
     state:
       data: [0x30, 0xd0]
       mask: [0xff, 0xf0]
-    # 로그 응답(DC)의 9번째 바이트(offset 8)가 01이면 2번등 ON (추정)
+    # RX 응답 9번째 바이트(offset 8) 추정
     state_on: { offset: 8, data: [0x01] }
     state_off: { offset: 8, data: [0x00] }
     on_turn_on:
