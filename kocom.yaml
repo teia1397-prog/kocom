@@ -79,66 +79,43 @@ logger:
   #1번 전등 OFF, 2번 전등 먼저 OFF
   #AA 55 / 30 BC 00 01 00 0E 01 00 FF 00 00 00 00 00 00 00 FB / 0D0D 2번전등 OFF
   #AA 55 / 30 BC 00 01 00 0E 01 00 00 00 00 00 00 00 00 00 FC / 0D0D 1번전등 OFF
-  globals:
-  - id: light_1_state
-    type: bool
-    restore_value: no
-    initial_value: 'false'
-  - id: light_2_state
-    type: bool
-    restore_value: no
-    initial_value: 'false'
+# 1. 상태 저장을 위한 변수 추가
+globals:
+  - id: l1_state
+    type: uint8_t
+    initial_value: '0x00'
+  - id: l2_state
+    type: uint8_t
+    initial_value: '0x00'
 
-    script:
-  - id: send_light_packet
-    mode: restart
-    then:
-      - uart.write:
-          data: !lambda |-
-            uint8_t l1 = id(light_1_state) ? 0xFF : 0x00;
-            uint8_t l2 = id(light_2_state) ? 0xFF : 0x00;
-            // 패킷 조립 (1번은 8번 인덱스, 2번은 9번 인덱스)
-            std::vector<uint8_t> pkt = {
-              0x30, 0xbc, 0x00, 0x0e, 0x01, 0x00, 0x00, 0x00, 
-              l1,   l2,   0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-            };
-            // 체크섬 계산 (필요시 추가) 및 전송 로직
-            return pkt;
-            
 light:
-- platform: template
+  - platform: template
     name: "Master Room Light 1"
     id: master_room_light_1
-    optimistic: true
     on_turn_on:
       then:
-        - globals.set:
-            id: light_1_state
-            value: 'true'
-        - script.execute: send_light_packet
+        - lambda: |-
+            id(l1_state) = 0xFF;
+            id(uart_bus).write_array({0xAA, 0x55, 0x30, 0xBC, 0x00, 0x01, 0x00, 0x0E, 0x01, 0x00, id(l1_state), id(l2_state), 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, (uint8_t)(0xFC - (id(l1_state)==0xFF?1:0) - (id(l2_state)==0xFF?1:0)), 0x0D, 0x0D});
     on_turn_off:
       then:
-        - globals.set:
-            id: light_1_state
-            value: 'false'
-        - script.execute: send_light_packet
+        - lambda: |-
+            id(l1_state) = 0x00;
+            id(uart_bus).write_array({0xAA, 0x55, 0x30, 0xBC, 0x00, 0x01, 0x00, 0x0E, 0x01, 0x00, id(l1_state), id(l2_state), 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, (uint8_t)(0xFC - (id(l1_state)==0xFF?1:0) - (id(l2_state)==0xFF?1:0)), 0x0D, 0x0D});
 
   - platform: template
     name: "Master Room Light 2"
     id: master_room_light_2
-    optimistic: true
     on_turn_on:
       then:
-        - globals.set:
-            id: light_2_state
-            value: 'true'
-        - script.execute: send_light_packet
+        - lambda: |-
+            id(l2_state) = 0xFF;
+            id(uart_bus).write_array({0xAA, 0x55, 0x30, 0xBC, 0x00, 0x01, 0x00, 0x0E, 0x01, 0x00, id(l1_state), id(l2_state), 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, (uint8_t)(0xFC - (id(l1_state)==0xFF?1:0) - (id(l2_state)==0xFF?1:0)), 0x0D, 0x0D});
     on_turn_off:
       then:
-        - globals.set:
-            id: light_2_state
-            value: 'false'
-        - script.execute: send_light_packet
+        - lambda: |-
+            id(l2_state) = 0x00;
+            id(uart_bus).write_array({0xAA, 0x55, 0x30, 0xBC, 0x00, 0x01, 0x00, 0x0E, 0x01, 0x00, id(l1_state), id(l2_state), 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, (uint8_t)(0xFC - (id(l1_state)==0xFF?1:0) - (id(l2_state)==0xFF?1:0)), 0x0D, 0x0D});
         
 
 # 아래는 원        
