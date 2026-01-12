@@ -58,54 +58,136 @@ logger:
     uart_debug: DEBUG
     uartex: DEBUG
 
-light:
   # 안방 조명 1 (Room 1)
-  - platform: uartex
+  #1번 전등 ON, 2번전등 OFF
+  #AA 55 / 30 BC 00 01 00 0E 01 00 FF 00 00 00 00 00 00 00 FB / 0D0D
+  #1번 전등 OFF, 2번전등 OFF
+  #AA 55 / 30 BC 00 01 00 0E 01 00 00 00 00 00 00 00 00 00 FC / 0D0D
+  #1번 전등 OFF, 2번 전등 ON
+  #AA 55 / 30 BC 00 01 00 0E 01 00 00 FF 00 00 00 00 00 00 FB / 0D0D
+  #1번 전등 OFF, 2번 전등 OFF
+  #AA 55 / 30 BC 00 01 00 0E 01 00 00 00 00 00 00 00 00 00 FC / 0D0D
+  #1번 전등 먼저 ON, 2번 전등 ON
+  #AA 55 / 30 BC 00 01 00 0E 01 00 FF 00 00 00 00 00 00 00 FB / 0D0D 1번전등 ON
+  #AA 55 / 30 BC 00 01 00 0E 01 00 FF FF 00 00 00 00 00 00 FA / 0D0D 2번전등 OM
+  #1번 전등 먼저 OFF, 2번 전등 ON
+  #AA 55 / 30 BC 00 01 00 0E 01 00 FF 00 00 00 00 00 00 00 FB / 0D0D 1번전등 OFF
+  #AA 55 / 30 BC 00 01 00 0E 01 00 00 00 00 00 00 00 00 00 FC / 0D0D 2번전등 OFF
+  #1번 전등 OFF, 2번 전등 먼저 ON
+  #AA 55 / 30 BC 00 01 00 0E 01 00 00 FF 00 00 00 00 00 00 FB / 0D0D 2번전등 ON
+  #AA 55 / 30 BC 00 01 00 0E 01 00 FF FF 00 00 00 00 00 00 FA / 0D0D 1번전등 ON
+  #1번 전등 OFF, 2번 전등 먼저 OFF
+  #AA 55 / 30 BC 00 01 00 0E 01 00 FF 00 00 00 00 00 00 00 FB / 0D0D 2번전등 OFF
+  #AA 55 / 30 BC 00 01 00 0E 01 00 00 00 00 00 00 00 00 00 FC / 0D0D 1번전등 OFF
+  globals:
+  - id: light_1_state
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: light_2_state
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+    script:
+  - id: send_light_packet
+    mode: restart
+    then:
+      - uart.write:
+          data: !lambda |-
+            uint8_t l1 = id(light_1_state) ? 0xFF : 0x00;
+            uint8_t l2 = id(light_2_state) ? 0xFF : 0x00;
+            // 패킷 조립 (1번은 8번 인덱스, 2번은 9번 인덱스)
+            std::vector<uint8_t> pkt = {
+              0x30, 0xbc, 0x00, 0x0e, 0x01, 0x00, 0x00, 0x00, 
+              l1,   l2,   0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+            };
+            // 체크섬 계산 (필요시 추가) 및 전송 로직
+            return pkt;
+            
+light:
+- platform: template
     name: "Master Room Light 1"
     id: master_room_light_1
-    state:
-      data: [0x30, 0xd0, 0x00, 0x0e, 0x01]
-      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
-    state_on:
-      offset: 8
-      data: [0xff]
-    state_off:
-      offset: 8
-      data: [0x00]
-    command_on:
-      data: [0x30, 0xbc, 0x00, 0x0e, 0x01, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    command_off:
-      data: [0x30, 0xbc, 0x00, 0x0e, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    command_update: 
-      data: [0x30, 0xbc, 0x00, 0x0e, 0x01, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    update_interval: 2h
+    optimistic: true
+    on_turn_on:
+      then:
+        - globals.set:
+            id: light_1_state
+            value: 'true'
+        - script.execute: send_light_packet
+    on_turn_off:
+      then:
+        - globals.set:
+            id: light_1_state
+            value: 'false'
+        - script.execute: send_light_packet
 
-  # 안방 조명 2 (Room 1)
-  - platform: uartex
+  - platform: template
     name: "Master Room Light 2"
     id: master_room_light_2
-    state:
-      data: [0x30, 0xd0, 0x00, 0x0e, 0x01]
-      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
-    state_on:
-      offset: 9
-      data: [0xff]
-    state_off:
-      offset: 9
-      data: [0x00]
-    command_on:
-      data: [0x30, 0xbc, 0x00, 0x0e, 0x01, 0x00, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    command_off:
-      data: [0x30, 0xbc, 0x00, 0x0e, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    command_update: 
-      data: [0x30, 0xbc, 0x00, 0x0e, 0x01, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    update_interval: 2h
+    optimistic: true
+    on_turn_on:
+      then:
+        - globals.set:
+            id: light_2_state
+            value: 'true'
+        - script.execute: send_light_packet
+    on_turn_off:
+      then:
+        - globals.set:
+            id: light_2_state
+            value: 'false'
+        - script.execute: send_light_packet
+        
+
+# 아래는 원        
+#  - platform: uartex
+#    name: "Master Room Light 1"
+#    id: master_room_light_1
+#    state:
+#      data: [0x30, 0xd0, 0x00, 0x0e, 0x01]
+#      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
+#    state_on:
+#      offset: 8
+#      data: [0xff]
+#    state_off:
+#      offset: 8
+#      data: [0x00]
+#    command_on:
+#      data: [0x30, 0xbc, 0x00, 0x0e, 0x01, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+#      ack: [0x30, 0xdc]
+#    command_off:
+#      data: [0x30, 0xbc, 0x00, 0x0e, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+#      ack: [0x30, 0xdc]
+#    command_update: 
+#      data: [0x30, 0xbc, 0x00, 0x0e, 0x01, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+#      ack: [0x30, 0xdc]
+#    update_interval: 2h
+#
+#  # 안방 조명 2 (Room 1)
+#  - platform: uartex
+#    name: "Master Room Light 2"
+#    id: master_room_light_2
+#    state:
+#      data: [0x30, 0xd0, 0x00, 0x0e, 0x01]
+#      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
+#    state_on:
+#      offset: 9
+#      data: [0xff]
+#    state_off:
+#      offset: 9
+#      data: [0x00]
+#    command_on:
+#      data: [0x30, 0xbc, 0x00, 0x0e, 0x01, 0x00, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+#      ack: [0x30, 0xdc]
+#    command_off:
+#      data: [0x30, 0xbc, 0x00, 0x0e, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+#      ack: [0x30, 0xdc]
+#    command_update: 
+#      data: [0x30, 0xbc, 0x00, 0x0e, 0x01, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+#      ack: [0x30, 0xdc]
+#    update_interval: 2h
 
   # 세나방 (Room 2)
   - platform: uartex
