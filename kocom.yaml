@@ -87,9 +87,10 @@ light:
     name: "Master Room Light 1"
     id: master_room_light_1
     state:
-      data: [0x30, 0xd0, 0x00, 0x0e, 0x01] # 로그의 DC 패킷 헤더와 일치
-      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
-    # 실제 스위치 작동 로그: AA 55 30 DC 00 0E 01 01 00 00 (FF) <-- 11번째 바이트
+      # DC 응답의 앞부분 4바이트 매칭 (명확성을 위해 0x01까지 포함 가능)
+      data: [0x30, 0xd0, 0x00, 0x0e]
+      mask: [0xff, 0xff, 0xff, 0xff]
+    # 로그 기준: 11번째 바이트(offset 10)가 FF면 ON
     state_on: { offset: 10, data: [0xff] }
     state_off: { offset: 10, data: [0x00] }
     on_turn_on:
@@ -97,6 +98,7 @@ light:
         - lambda: |-
             uint8_t l2 = id(master_room_light_2).remote_values.is_on() ? 0xFF : 0x00;
             uint8_t cs = (l2 == 0xFF) ? 0xFA : 0xFB;
+            // 로그와 동일한 21바이트 패킷 생성
             uint8_t p[21] = {0xAA, 0x55, 0x30, 0xBC, 0x00, 0x01, 0x00, 0x0E, 0x01, 0x00, 0xFF, l2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, cs, 0x0D, 0x0D};
             id(uart_bus).write_array(p, 21);
     on_turn_off:
@@ -112,9 +114,9 @@ light:
     name: "Master Room Light 2"
     id: master_room_light_2
     state:
-      data: [0x30, 0xd0, 0x00, 0x0e, 0x01]
-      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
-    # 실제 스위치 작동 로그: AA 55 30 DC 00 0E 01 01 00 00 00 (FF) <-- 12번째 바이트
+      data: [0x30, 0xd0, 0x00, 0x0e]
+      mask: [0xff, 0xff, 0xff, 0xff]
+    # 로그 기준: 12번째 바이트(offset 11)가 FF면 ON
     state_on: { offset: 11, data: [0xff] }
     state_off: { offset: 11, data: [0x00] }
     on_turn_on:
