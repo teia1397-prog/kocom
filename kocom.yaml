@@ -89,12 +89,14 @@ light:
     state:
       data: [0x30, 0xd0, 0x00, 0x0e, 0x01]
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
-    state_on: { offset: 8, data: [0xff] }
-    state_off: { offset: 8, data: [0x00] }
+    # RX 데이터 AA 55 30 DC 00 0E 01 01 00 00 (FF) <-- 11번째 바이트
+    state_on: { offset: 10, data: [0xff] }
+    state_off: { offset: 10, data: [0x00] }
     on_turn_on:
       then:
         - lambda: |-
             uint8_t l2 = id(master_room_light_2).remote_values.is_on() ? 0xFF : 0x00;
+            // 로그 기반 체크섬: 하나만 ON이면 FB, 둘다 ON이면 FA
             uint8_t cs = (l2 == 0xFF) ? 0xFA : 0xFB;
             uint8_t p[21] = {0xAA, 0x55, 0x30, 0xBC, 0x00, 0x01, 0x00, 0x0E, 0x01, 0x00, 0xFF, l2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, cs, 0x0D, 0x0D};
             id(uart_bus).write_array(p, 21);
@@ -102,6 +104,7 @@ light:
       then:
         - lambda: |-
             uint8_t l2 = id(master_room_light_2).remote_values.is_on() ? 0xFF : 0x00;
+            // 로그 기반 체크섬: 둘다 OFF면 FC, 2번만 ON상태면 FB
             uint8_t cs = (l2 == 0xFF) ? 0xFB : 0xFC;
             uint8_t p[21] = {0xAA, 0x55, 0x30, 0xBC, 0x00, 0x01, 0x00, 0x0E, 0x01, 0x00, 0x00, l2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, cs, 0x0D, 0x0D};
             id(uart_bus).write_array(p, 21);
@@ -113,8 +116,9 @@ light:
     state:
       data: [0x30, 0xd0, 0x00, 0x0e, 0x01]
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
-    state_on: { offset: 9, data: [0xff] }
-    state_off: { offset: 9, data: [0x00] }
+    # RX 데이터 AA 55 30 DC 00 0E 01 01 00 00 00 (FF) <-- 12번째 바이트
+    state_on: { offset: 11, data: [0xff] }
+    state_off: { offset: 11, data: [0x00] }
     on_turn_on:
       then:
         - lambda: |-
@@ -125,7 +129,7 @@ light:
     on_turn_off:
       then:
         - lambda: |-
-            uint8_t l1 = id(master_room_light_1).remote_values.is_on() ? 0x01 : 0x00; // 2번 오프시 1번 상태 확인
+            uint8_t l1 = id(master_room_light_1).remote_values.is_on() ? 0xFF : 0x00;
             uint8_t cs = (l1 == 0xFF) ? 0xFB : 0xFC;
             uint8_t p[21] = {0xAA, 0x55, 0x30, 0xBC, 0x00, 0x01, 0x00, 0x0E, 0x01, 0x00, l1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, cs, 0x0D, 0x0D};
             id(uart_bus).write_array(p, 21);
