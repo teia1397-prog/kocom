@@ -81,21 +81,21 @@ logger:
   #AA 55 / 30 BC 00 01 00 0E 01 00 00 00 00 00 00 00 00 00 FC / 0D0D 1번전등 OFF
 
 light:
-  # 안방 조명 1
+  # --- 안방 조명 1 ---
   - platform: uartex
     name: "Master Room Light 1"
     id: master_room_light_1
     state:
-      data: [0x30, 0xd0, 0x00, 0x0e, 0x01]
+      data: [0x30, 0xd0, 0x00, 0x0e, 0x01] # 마지막 01이 방 구분자
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
     state_on: { offset: 8, data: [0xff] }
     state_off: { offset: 8, data: [0x00] }
-    # 명령(command) 설정을 비우고 액션으로 직접 제어
     on_turn_on:
       then:
         - lambda: |-
             uint8_t l2 = id(master_room_light_2).remote_values.is_on() ? 0xFF : 0x00;
-            uint8_t cs = (l2 == 0xFF) ? 0xFA : 0xFB;
+            uint8_t cs = (l2 == 0xFF) ? 0xFA : 0xFB; 
+            // 9번째 바이트에 01(방번호)을 넣고, 11번에 FF(1번 켬), 12번에 l2(2번 상태 유지)
             static const uint8_t p[] = {0xAA, 0x55, 0x30, 0xBC, 0x00, 0x01, 0x00, 0x0E, 0x01, 0x00, 0xFF, l2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, cs, 0x0D, 0x0D};
             id(uart_bus).write_array(p, 22);
     on_turn_off:
@@ -106,7 +106,7 @@ light:
             static const uint8_t p[] = {0xAA, 0x55, 0x30, 0xBC, 0x00, 0x01, 0x00, 0x0E, 0x01, 0x00, 0x00, l2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, cs, 0x0D, 0x0D};
             id(uart_bus).write_array(p, 22);
 
-  # 안방 조명 2
+  # --- 안방 조명 2 ---
   - platform: uartex
     name: "Master Room Light 2"
     id: master_room_light_2
