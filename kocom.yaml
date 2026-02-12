@@ -104,7 +104,7 @@ light:
       offset: 8
       data: [0x00]
     command_on: !lambda |-
-      // 안전한 상태 확인
+      # 안전한 상태 확인
       uint8_t light2_state = 0x00;
       if (id(master_bedroom_light_2).state) {
         auto state = id(master_bedroom_light_2).current_values;
@@ -342,11 +342,19 @@ light:
       ack: [0x30, 0xdc]
     update_interval: 138min
     
-# 거실 조명 1
+# 거실 조명 1 (Room 0)
   - platform: uartex
     name: "거실 조명 1 (R0)"
     id: living_room_light_1
-    ...
+    state:
+      data: [0x30, 0xd0, 0x00, 0x0e, 0x00]
+      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
+    state_on:
+      offset: 8
+      data: [0xff]
+    state_off:
+      offset: 8
+      data: [0x00]
     command_on: !lambda |-
       uint8_t light2_state = 0x00;
       if (id(living_room_light_2).state) {
@@ -361,12 +369,24 @@ light:
         light2_state = state.is_on() ? 0xff : 0x00;
       }
       return {{0x30, 0xbc, 0x00, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x00, light2_state, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
+    command_update: 
+      data: [0x30, 0xbc, 0x00, 0x0e, 0x00, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+      ack: [0x30, 0xdc]
+    update_interval: 141min
 
-  # 거실 조명 2
+  # 거실 조명 2 (Room 0)
   - platform: uartex
     name: "거실 조명 2 (R0)"
     id: living_room_light_2
-    ...
+    state:
+      data: [0x30, 0xd0, 0x00, 0x0e, 0x00]
+      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
+    state_on:
+      offset: 9
+      data: [0xff]
+    state_off:
+      offset: 9
+      data: [0x00]
     command_on: !lambda |-
       uint8_t light1_state = 0x00;
       if (id(living_room_light_1).state) {
