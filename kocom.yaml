@@ -92,7 +92,7 @@ esphome:
 light:
   # 안방 조명 1 (Room 1 - Master Bedroom Light 1)
   - platform: uartex
-    name: "Master Bedroom Light 1"
+    name: "안방 조명 1"
     id: master_bedroom_light_1
     state:
       data: [0x30, 0xd0, 0x00, 0x0e, 0x01]
@@ -116,7 +116,7 @@ light:
 
   # 안방 조명 2 (Room 1 - Master Bedroom Light 2)
   - platform: uartex
-    name: "Master Bedroom Light 2"
+    name: "안방 조명 2"
     id: master_bedroom_light_2
     state:
       data: [0x30, 0xd0, 0x00, 0x0e, 0x01]
@@ -137,7 +137,7 @@ light:
     
   # 세나방 (Room 2)
   - platform: uartex
-    name: "Room 2 Light"
+    name: "세나방 조명명"
     id: room_2_light
     state:
       data: [0x30, 0xd0, 0x00, 0x0e, 0x02]
@@ -161,7 +161,7 @@ light:
 
  # 사라방 조명 (Room 3)
   - platform: uartex
-    name: "Room 3 Light"
+    name: "사라방 조명명"
     id: room_3_light
     state:
       data: [0x30, 0xd0, 0x00, 0x0e, 0x03]
@@ -226,7 +226,7 @@ light:
 # 첫 번째 전송 패킷 사용 (BC 명령)
 # [W]AA 55 / 30 BC 00 0E 04 00 00 00 FF 00 00 00 00 00 00 00 / FD / 0D0D(21)
   - platform: uartex
-    name: "Alpha Room Light"
+    name: "알파룸 조명명"
     id: Alpha_room_light
   
     state:
@@ -255,7 +255,7 @@ light:
 
   # 주방 조명 1
   - platform: uartex
-    name: "Kitchen Light 1"
+    name: "주방 조명 1"
     id: kitchen_light_1
     state:
       data: [0x30, 0xd0, 0x00, 0x0e, 0x05]
@@ -279,7 +279,7 @@ light:
 
   # 주방 조명 2
   - platform: uartex
-    name: "Kitchen Light 2"
+    name: "주방 조명 2"
     id: kitchen_light_2
     state:
       data: [0x30, 0xd0, 0x00, 0x0e, 0x05]
@@ -303,7 +303,7 @@ light:
 
   # 주방 조명 3
   - platform: uartex
-    name: "Kitchen Light 3"
+    name: "주방 조명 3"
     id: kitchen_light_3
     state:
       data: [0x30, 0xd0, 0x00, 0x0e, 0x05]
@@ -327,7 +327,7 @@ light:
     
   # 거실 조명 1 (Room 0 - Living Room Light 1)
   - platform: uartex
-    name: "Living Room Light 1"
+    name: "거실 조명 1"
     id: living_room_light_1
     state:
       data: [0x30, 0xd0, 0x00, 0x0e, 0x00]
@@ -351,7 +351,7 @@ light:
 
   # 거실 조명 2 (Room 0 - Living Room Light 2)
   - platform: uartex
-    name: "Living Room Light 2"
+    name: "거실 조명 2"
     id: living_room_light_2
     state:
       data: [0x30, 0xd0, 0x00, 0x0e, 0x00]
@@ -375,7 +375,7 @@ light:
 climate:
   # 거실 난방 (Room 0) - 프리셋 모드로만 제어 (전원 버튼 없음)
   - platform: uartex
-    name: "Living Room Heater"
+    name: "거실 보일러러"
     id: living_room_heater
     visual:
       min_temperature: 10 °C
@@ -429,7 +429,7 @@ climate:
 
   # 안방 난방 (Room 1) - 프리셋 모드로만 제어 (전원 버튼 없음)
   - platform: uartex
-    name: "Master Room Heater"
+    name: "안방 보일러"
     id: master_room_heater
     visual:
       min_temperature: 10 °C
@@ -486,7 +486,7 @@ climate:
     update_interval: 2h
   # 사라 난방 (Room 3) - 프리셋 모드로만 제어 (전원 버튼 없음)
   - platform: uartex
-    name: "Room 3 Heater"
+    name: "사라방 보일러"
     id: room3_heater
     visual:
       min_temperature: 10 °C
@@ -544,7 +544,7 @@ climate:
 
   # 세나방 난방 (Room 2) - 프리셋 모드로만 제어 (전원 버튼 없음)
   - platform: uartex
-    name: "Room 2 Heater"
+    name: "세나방 보일러러"
     id: room2_heater
     visual:
       min_temperature: 10 °C
@@ -602,7 +602,7 @@ climate:
 
   # 알파룸 난방 - 프리셋 모드로만 제어 (전원 버튼 없음)
   - platform: uartex
-    name: "Alpha room Heater"
+    name: "알파룸 보일러러"
     id: Alpha_room_heater
     visual:
       min_temperature: 10 °C
