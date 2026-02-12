@@ -65,30 +65,6 @@ esphome:
       - delay: 5s  # 부팅 후 5초 대기
       - logger.log: "코콤 시스템 초기화 완료"
 
-
-  # 안방 조명 1 (Room 1)
-  #1번 전등 ON, 2번전등 OFF
-  #AA 55 / 30 BC 00 01 00 0E 01 00 FF 00 00 00 00 00 00 00 FB / 0D0D
-
-  #1번 전등 OFF, 2번전등 OFF
-  #AA 55 / 30 BC 00 01 00 0E 01 00 00 00 00 00 00 00 00 00 FC / 0D0D
-  #1번 전등 OFF, 2번 전등 ON
-  #AA 55 / 30 BC 00 01 00 0E 01 00 00 FF 00 00 00 00 00 00 FB / 0D0D
-  #1번 전등 OFF, 2번 전등 OFF
-  #AA 55 / 30 BC 00 01 00 0E 01 00 00 00 00 00 00 00 00 00 FC / 0D0D
-  #1번 전등 먼저 ON, 2번 전등 ON
-  #AA 55 / 30 BC 00 01 00 0E 01 00 FF 00 00 00 00 00 00 00 FB / 0D0D 1번전등 ON
-  #AA 55 / 30 BC 00 01 00 0E 01 00 FF FF 00 00 00 00 00 00 FA / 0D0D 2번전등 OM
-  #1번 전등 먼저 OFF, 2번 전등 ON
-  #AA 55 / 30 BC 00 01 00 0E 01 00 FF 00 00 00 00 00 00 00 FB / 0D0D 1번전등 OFF
-  #AA 55 / 30 BC 00 01 00 0E 01 00 00 00 00 00 00 00 00 00 FC / 0D0D 2번전등 OFF
-  #1번 전등 OFF, 2번 전등 먼저 ON
-  #AA 55 / 30 BC 00 01 00 0E 01 00 00 FF 00 00 00 00 00 00 FB / 0D0D 2번전등 ON
-  #AA 55 / 30 BC 00 01 00 0E 01 00 FF FF 00 00 00 00 00 00 FA / 0D0D 1번전등 ON
-  #1번 전등 OFF, 2번 전등 먼저 OFF
-  #AA 55 / 30 BC 00 01 00 0E 01 00 FF 00 00 00 00 00 00 00 FB / 0D0D 2번전등 OFF
-  #AA 55 / 30 BC 00 01 00 0E 01 00 00 00 00 00 00 00 00 00 FC / 0D0D 1번전등 OFF
-
 light:
   # 안방 조명 1
   - platform: uartex
@@ -104,7 +80,6 @@ light:
       offset: 8
       data: [0x00]
     command_on: !lambda |-
-      # 안전한 상태 확인
       uint8_t light2_state = 0x00;
       if (id(master_bedroom_light_2).state) {
         auto state = id(master_bedroom_light_2).current_values;
