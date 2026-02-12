@@ -320,8 +320,6 @@ light:
       ack: [0x30, 0xdc]
     update_interval: 2h
     
-  # 거실 조명 (Room 0) - 단일 조명
-light:
   # 거실 조명 1 (Room 0 - Living Room Light 1)
   - platform: uartex
     name: "Living Room Light 1"
