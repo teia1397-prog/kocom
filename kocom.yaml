@@ -426,7 +426,10 @@ climate:
             - "x.target_temperature"
             - "x.current_temperature"
             - 'x.preset == CLIMATE_PRESET_AWAY ? "외출" : "일반"'
-
+    command_update: 
+      data: [0x30, 0xbc, 0x00, 0x36, 0x00, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+      ack: [0x30, 0xdc]
+    update_interval: 2h
   # 안방 난방 (Room 1) - 프리셋 모드로만 제어 (전원 버튼 없음)
   - platform: uartex
     name: "안방 보일러 (R1)"
