@@ -137,7 +137,7 @@ light:
     
   # 세나방 (Room 2)
   - platform: uartex
-    name: "세나방 조명명"
+    name: "세나방 조명"
     id: room_2_light
     state:
       data: [0x30, 0xd0, 0x00, 0x0e, 0x02]
@@ -161,7 +161,7 @@ light:
 
  # 사라방 조명 (Room 3)
   - platform: uartex
-    name: "사라방 조명명"
+    name: "사라방 조명"
     id: room_3_light
     state:
       data: [0x30, 0xd0, 0x00, 0x0e, 0x03]
