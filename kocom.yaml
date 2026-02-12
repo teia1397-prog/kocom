@@ -104,10 +104,19 @@ light:
       offset: 8
       data: [0x00]
     command_on: !lambda |-
-      uint8_t light2_state = id(master_bedroom_light_2).current_values.is_on() ? 0xff : 0x00;
+      // 안전한 상태 확인
+      uint8_t light2_state = 0x00;
+      if (id(master_bedroom_light_2).state) {
+        auto state = id(master_bedroom_light_2).current_values;
+        light2_state = state.is_on() ? 0xff : 0x00;
+      }
       return {{0x30, 0xbc, 0x00, 0x0e, 0x01, 0x00, 0x00, 0x00, 0xff, light2_state, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_off: !lambda |-
-      uint8_t light2_state = id(master_bedroom_light_2).current_values.is_on() ? 0xff : 0x00;
+      uint8_t light2_state = 0x00;
+      if (id(master_bedroom_light_2).state) {
+        auto state = id(master_bedroom_light_2).current_values;
+        light2_state = state.is_on() ? 0xff : 0x00;
+      }
       return {{0x30, 0xbc, 0x00, 0x0e, 0x01, 0x00, 0x00, 0x00, 0x00, light2_state, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_update: 
       data: [0x30, 0xbc, 0x00, 0x0e, 0x01, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
@@ -128,8 +137,19 @@ light:
       offset: 9
       data: [0x00]
     command_on: !lambda |-
-      uint8_t light1_state = id(master_bedroom_light_1).current_values.is_on() ? 0xff : 0x00;
-      return {{0x30, 0xbc, 0x00, 0x0e, 0x01, 0x00, 0x00, 0x00, ligh
+      uint8_t light1_state = 0x00;
+      if (id(master_bedroom_light_1).state) {
+        auto state = id(master_bedroom_light_1).current_values;
+        light1_state = state.is_on() ? 0xff : 0x00;
+      }
+      return {{0x30, 0xbc, 0x00, 0x0e, 0x01, 0x00, 0x00, 0x00, light1_state, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
+    command_off: !lambda |-
+      uint8_t light1_state = 0x00;
+      if (id(master_bedroom_light_1).state) {
+        auto state = id(master_bedroom_light_1).current_values;
+        light1_state = state.is_on() ? 0xff : 0x00;
+      }
+      return {{0x30, 0xbc, 0x00, 0x0e, 0x01, 0x00, 0x00, 0x00, light1_state, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
   # command_update 삭제! (조명 1이 업데이트할 때 같이 업데이트됨)
     
   # 세나방 (Room 2)
@@ -326,44 +346,40 @@ light:
   - platform: uartex
     name: "거실 조명 1 (R0)"
     id: living_room_light_1
-    state:
-      data: [0x30, 0xd0, 0x00, 0x0e, 0x00]
-      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
-    state_on:
-      offset: 8
-      data: [0xff]
-    state_off:
-      offset: 8
-      data: [0x00]
+    ...
     command_on: !lambda |-
-      uint8_t light2_state = id(living_room_light_2).current_values.is_on() ? 0xff : 0x00;
+      uint8_t light2_state = 0x00;
+      if (id(living_room_light_2).state) {
+        auto state = id(living_room_light_2).current_values;
+        light2_state = state.is_on() ? 0xff : 0x00;
+      }
       return {{0x30, 0xbc, 0x00, 0x0e, 0x00, 0x00, 0x00, 0x00, 0xff, light2_state, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_off: !lambda |-
-      uint8_t light2_state = id(living_room_light_2).current_values.is_on() ? 0xff : 0x00;
+      uint8_t light2_state = 0x00;
+      if (id(living_room_light_2).state) {
+        auto state = id(living_room_light_2).current_values;
+        light2_state = state.is_on() ? 0xff : 0x00;
+      }
       return {{0x30, 0xbc, 0x00, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x00, light2_state, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
-    command_update: 
-      data: [0x30, 0xbc, 0x00, 0x0e, 0x00, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    update_interval: 141min
 
   # 거실 조명 2
   - platform: uartex
     name: "거실 조명 2 (R0)"
     id: living_room_light_2
-    state:
-      data: [0x30, 0xd0, 0x00, 0x0e, 0x00]
-      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
-    state_on:
-      offset: 9
-      data: [0xff]
-    state_off:
-      offset: 9
-      data: [0x00]
+    ...
     command_on: !lambda |-
-      uint8_t light1_state = id(living_room_light_1).current_values.is_on() ? 0xff : 0x00;
+      uint8_t light1_state = 0x00;
+      if (id(living_room_light_1).state) {
+        auto state = id(living_room_light_1).current_values;
+        light1_state = state.is_on() ? 0xff : 0x00;
+      }
       return {{0x30, 0xbc, 0x00, 0x0e, 0x00, 0x00, 0x00, 0x00, light1_state, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_off: !lambda |-
-      uint8_t light1_state = id(living_room_light_1).current_values.is_on() ? 0xff : 0x00;
+      uint8_t light1_state = 0x00;
+      if (id(living_room_light_1).state) {
+        auto state = id(living_room_light_1).current_values;
+        light1_state = state.is_on() ? 0xff : 0x00;
+      }
       return {{0x30, 0xbc, 0x00, 0x0e, 0x00, 0x00, 0x00, 0x00, light1_state, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     # command_update 삭제! (조명 1이 업데이트할 때 같이 업데이트됨)
 
@@ -802,23 +818,6 @@ button:
           ack: [0x30, 0xdc]
       - logger.log: "전원 공급선 활성화"
 
-switch:
-  # 일괄소등 스위치
-  - platform: template
-    name: "All Lights Control"
-    icon: "mdi:lightbulb-group"
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
-    turn_on_action:
-      # 조명 복원 (한 번만!)
-      - uartex.write:
-          data: [0x30, 0xbc, 0x00, 0x01, 0x00, 0x3b, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-      - logger.log: "조명 복원 완료"
-    turn_off_action:
-      # 일괄소등 (한 번만!)
-      - uartex.write:
-          data: [0x30, 0xbc, 0x00, 0x3b, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-      - logger.log: "일괄소등 완료"
 #sensor:
 #  - platform: uartex
 #    name: "Elevator Floors"
