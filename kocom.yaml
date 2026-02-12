@@ -375,7 +375,7 @@ light:
 climate:
   # 거실 난방 (Room 0) - 프리셋 모드로만 제어 (전원 버튼 없음)
   - platform: uartex
-    name: "거실 보일러"
+    name: "거실 보일러 (R0)"
     id: living_room_heater
     visual:
       min_temperature: 10 °C
@@ -429,7 +429,7 @@ climate:
 
   # 안방 난방 (Room 1) - 프리셋 모드로만 제어 (전원 버튼 없음)
   - platform: uartex
-    name: "안방 보일러"
+    name: "안방 보일러 (R1)"
     id: master_room_heater
     visual:
       min_temperature: 10 °C
@@ -486,7 +486,7 @@ climate:
     update_interval: 2h
   # 사라 난방 (Room 3) - 프리셋 모드로만 제어 (전원 버튼 없음)
   - platform: uartex
-    name: "사라방 보일러"
+    name: "사라방 보일러 (R3)"
     id: room3_heater
     visual:
       min_temperature: 10 °C
@@ -544,7 +544,7 @@ climate:
 
   # 세나방 난방 (Room 2) - 프리셋 모드로만 제어 (전원 버튼 없음)
   - platform: uartex
-    name: "세나방 보일러"
+    name: "세나방 보일러 (R2)"
     id: room2_heater
     visual:
       min_temperature: 10 °C
@@ -602,7 +602,7 @@ climate:
 
   # 알파룸 난방 - 프리셋 모드로만 제어 (전원 버튼 없음)
   - platform: uartex
-    name: "알파룸 보일러"
+    name: "알파룸 보일러 (R4)"
     id: Alpha_room_heater
     visual:
       min_temperature: 10 °C
