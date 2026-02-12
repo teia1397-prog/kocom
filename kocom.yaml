@@ -90,7 +90,7 @@ esphome:
   #AA 55 / 30 BC 00 01 00 0E 01 00 00 00 00 00 00 00 00 00 FC / 0D0D 1번전등 OFF
 
 light:
-  # 안방 조명 1
+  # 안방 조명 1 (Room 1 - Master Bedroom Light 1)
   - platform: uartex
     name: "안방 조명 1 (R1)"
     id: master_bedroom_light_1
@@ -114,7 +114,7 @@ light:
       ack: [0x30, 0xdc]
     update_interval: 120min
 
-  # 안방 조명 2
+  # 안방 조명 2 (Room 1 - Master Bedroom Light 2)
   - platform: uartex
     name: "안방 조명 2 (R1)"
     id: master_bedroom_light_2
@@ -325,7 +325,7 @@ light:
       ack: [0x30, 0xdc]
     update_interval: 138min
     
-# 거실 조명 1
+  # 거실 조명 1 (Room 0 - Living Room Light 1)
   - platform: uartex
     name: "거실 조명 1 (R0)"
     id: living_room_light_1
@@ -349,7 +349,7 @@ light:
       ack: [0x30, 0xdc]
     update_interval: 141min
 
-  # 거실 조명 2
+  # 거실 조명 2 (Room 0 - Living Room Light 2)
   - platform: uartex
     name: "거실 조명 2 (R0)"
     id: living_room_light_2
@@ -701,7 +701,7 @@ binary_sensor:
       offset: 8
       data: [0x00] # 문 닫힘 (값 반전)
     on_press:
-      - logger.log: "  현관문이 종열렸습니다!"
+      - logger.log: "� 현관문이 종열렸습니다!"
     on_release:
       - logger.log: "🚪 현관문이 닫혔습니다!"
 
@@ -805,25 +805,7 @@ valve:
       data: [0x30, 0xbc, 0x00, 0x2c, 0x00, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     update_interval: 2h
-    
-button:
-  # 일괄소등
-  - platform: template
-    name: "All Lights OFF"
-    icon: "mdi:lightbulb-group-off"
-    on_press:
-      - uartex.write:
-          data: [0x30, 0xbc, 0x00, 0x3b, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-          ack: [0x30, 0xdc]
-  
-  # 조명 복원
-  - platform: template
-    name: "Lights Restore"
-    icon: "mdi:lightbulb-group"
-    on_press:
-      - uartex.write:
-          data: [0x30, 0xbc, 0x00, 0x3b, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-          ack: [0x30, 0xdc]
+
 #sensor:
 #  - platform: uartex
 #    name: "Elevator Floors"
