@@ -735,7 +735,7 @@ switch:
   - platform: uartex
     name: "세나방 콘센트 1"
     id: room2_outlet_1
-    icon: "mdi:power-socket-kr"
+    icon: "mdi:power-socket-de"
     state:
       data: [0x30, 0xd0, 0x00, 0x3b, 0x02]
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
@@ -762,7 +762,7 @@ switch:
   - platform: uartex
     name: "세나방 콘센트 2"
     id: room2_outlet_2
-    icon: "mdi:power-socket-kr"
+    icon: "mdi:power-socket-de"
     state:
       data: [0x30, 0xd0, 0x00, 0x3b, 0x02]
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
@@ -785,7 +785,7 @@ switch:
   - platform: uartex
     name: "세나방 콘센트 3"
     id: room2_outlet_3
-    icon: "mdi:power-socket-kr"
+    icon: "mdi:power-socket-de"
     state:
       data: [0x30, 0xd0, 0x00, 0x3b, 0x02]
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
