@@ -4,8 +4,8 @@ uart:
   data_bits: 8
   parity: NONE
   stop_bits: 1
-  rx_pin: GPIO01
-  tx_pin: GPIO02
+  rx_pin: GPIO22
+  tx_pin: GPIO19
   debug:
     direction: BOTH
     dummy_receiver: false
