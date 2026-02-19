@@ -64,19 +64,6 @@ esphome:
       - delay: 1s
       - component.update: living_room_heater
       - delay: 1s
-      # 조명 상태 조회
-      - component.update: master_bedroom_light_1
-      - delay: 1s
-      - component.update: room_2_light
-      - delay: 1s
-      - component.update: room_3_light
-      - delay: 1s
-      - component.update: Alpha_room_light
-      - delay: 1s
-      - component.update: living_room_light_1
-      - delay: 1s
-      - component.update: kitchen_light_1
-      - delay: 1s
       # 가스밸브 상태 조회
       - component.update: gas_valve
       - delay: 1s
