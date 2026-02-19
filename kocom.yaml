@@ -698,7 +698,6 @@ valve:
 switch:
   - platform: template
     name: "All Lights Control"
-    unique_id: all_lights_control
     icon: "mdi:lightbulb-group"
     optimistic: true
     restore_mode: DISABLED
