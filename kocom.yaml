@@ -719,7 +719,6 @@ switch:
 
   - platform: uartex
     name: "안방 콘센트 1 (R1)"
-    unique_id: outlet_r1_1
     id: room1_outlet_1
     icon: "mdi:power-socket-de"
     state:
@@ -746,7 +745,6 @@ switch:
 
   - platform: uartex
     name: "안방 콘센트 2 (R1)"
-    unique_id: outlet_r1_2
     id: room1_outlet_2
     icon: "mdi:power-socket-de"
     state:
@@ -769,7 +767,6 @@ switch:
 
   - platform: uartex
     name: "안방 콘센트 3 (R1)"
-    unique_id: outlet_r1_3
     id: room1_outlet_3
     icon: "mdi:power-socket-de"
     state:
@@ -796,7 +793,6 @@ switch:
 
   - platform: uartex
     name: "세나방 콘센트 1 (R2)"
-    unique_id: outlet_r2_1
     id: room2_outlet_1
     icon: "mdi:power-socket-de"
     state:
@@ -823,7 +819,6 @@ switch:
 
   - platform: uartex
     name: "세나방 콘센트 2 (R2)"
-    unique_id: outlet_r2_2
     id: room2_outlet_2
     icon: "mdi:power-socket-de"
     state:
@@ -846,7 +841,6 @@ switch:
 
   - platform: uartex
     name: "세나방 콘센트 3 (R2)"
-    unique_id: outlet_r2_3
     id: room2_outlet_3
     icon: "mdi:power-socket-de"
     state:
@@ -873,7 +867,6 @@ switch:
 
   - platform: uartex
     name: "사라방 콘센트 1 (R3)"
-    unique_id: outlet_r3_1
     id: room3_outlet_1
     icon: "mdi:power-socket-de"
     state:
@@ -900,7 +893,6 @@ switch:
 
   - platform: uartex
     name: "사라방 콘센트 2 (R3)"
-    unique_id: outlet_r3_2
     id: room3_outlet_2
     icon: "mdi:power-socket-de"
     state:
@@ -923,7 +915,6 @@ switch:
 
   - platform: uartex
     name: "사라방 콘센트 3 (R3)"
-    unique_id: outlet_r3_3
     id: room3_outlet_3
     icon: "mdi:power-socket-de"
     state:
@@ -950,7 +941,6 @@ switch:
 
   - platform: uartex
     name: "알파룸 콘센트 1 (R4)"
-    unique_id: outlet_r4_1
     id: room4_outlet_1
     icon: "mdi:power-socket-de"
     state:
@@ -977,7 +967,6 @@ switch:
 
   - platform: uartex
     name: "알파룸 콘센트 2 (R4)"
-    unique_id: outlet_r4_2
     id: room4_outlet_2
     icon: "mdi:power-socket-de"
     state:
@@ -1000,7 +989,6 @@ switch:
 
   - platform: uartex
     name: "알파룸 콘센트 3 (R4)"
-    unique_id: outlet_r4_3
     id: room4_outlet_3
     icon: "mdi:power-socket-de"
     state:
@@ -1027,7 +1015,6 @@ switch:
 
   - platform: uartex
     name: "주방 콘센트 1 (R5)"
-    unique_id: outlet_r5_1
     id: room5_outlet_1
     icon: "mdi:power-socket-de"
     state:
@@ -1054,7 +1041,6 @@ switch:
 
   - platform: uartex
     name: "주방 콘센트 2 (R5)"
-    unique_id: outlet_r5_2
     id: room5_outlet_2
     icon: "mdi:power-socket-de"
     state:
@@ -1077,7 +1063,6 @@ switch:
 
   - platform: uartex
     name: "주방 콘센트 3 (R5)"
-    unique_id: outlet_r5_3
     id: room5_outlet_3
     icon: "mdi:power-socket-de"
     state:
@@ -1104,7 +1089,6 @@ switch:
 
   - platform: uartex
     name: "거실 콘센트 1 (R0)"
-    unique_id: outlet_r0_1
     id: room0_outlet_1
     icon: "mdi:power-socket-de"
     state:
@@ -1131,7 +1115,6 @@ switch:
 
   - platform: uartex
     name: "거실 콘센트 2 (R0)"
-    unique_id: outlet_r0_2
     id: room0_outlet_2
     icon: "mdi:power-socket-de"
     state:
@@ -1154,7 +1137,6 @@ switch:
 
   - platform: uartex
     name: "거실 콘센트 3 (R0)"
-    unique_id: outlet_r0_3
     id: room0_outlet_3
     icon: "mdi:power-socket-de"
     state:
