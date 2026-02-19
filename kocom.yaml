@@ -698,6 +698,7 @@ valve:
 switch:
   - platform: template
     name: "All Lights Control"
+    unique_id: all_lights_control
     icon: "mdi:lightbulb-group"
     optimistic: true
     restore_mode: DISABLED
@@ -714,12 +715,12 @@ switch:
       - logger.log: "일괄소등 완료 - 모든 조명 꺼짐"
 
 # ============================================
-# 콘센트 제어 - 안방 (Room 1)
+# 콘센트 제어 - 안방 (R1)
 # ============================================
 
-  # 안방 콘센트 1
   - platform: uartex
-    name: "안방 콘센트 1"
+    name: "안방 콘센트 1 (R1)"
+    unique_id: outlet_r1_1
     id: room1_outlet_1
     icon: "mdi:power-socket-de"
     state:
@@ -744,9 +745,9 @@ switch:
       ack: [0x30, 0xdc]
     update_interval: 2h
 
-  # 안방 콘센트 2
   - platform: uartex
-    name: "안방 콘센트 2"
+    name: "안방 콘센트 2 (R1)"
+    unique_id: outlet_r1_2
     id: room1_outlet_2
     icon: "mdi:power-socket-de"
     state:
@@ -767,9 +768,9 @@ switch:
       uint8_t out3 = id(room1_outlet_3).state ? 0xff : 0x00;
       return {{0x30, 0xbc, 0x00, 0x3b, 0x01, 0x01, 0x00, 0x00, out1, 0x00, out3, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
 
-  # 안방 콘센트 3
   - platform: uartex
-    name: "안방 콘센트 3"
+    name: "안방 콘센트 3 (R1)"
+    unique_id: outlet_r1_3
     id: room1_outlet_3
     icon: "mdi:power-socket-de"
     state:
@@ -791,12 +792,89 @@ switch:
       return {{0x30, 0xbc, 0x00, 0x3b, 0x01, 0x01, 0x00, 0x00, out1, out2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
 
 # ============================================
-# 콘센트 제어 - 사라방 (Room 3)
+# 콘센트 제어 - 세나방 (R2)
 # ============================================
 
-  # 사라방 콘센트 1
   - platform: uartex
-    name: "사라방 콘센트 1"
+    name: "세나방 콘센트 1 (R2)"
+    unique_id: outlet_r2_1
+    id: room2_outlet_1
+    icon: "mdi:power-socket-de"
+    state:
+      data: [0x30, 0xd0, 0x00, 0x3b, 0x02]
+      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
+    state_on:
+      offset: 8
+      data: [0xff]
+    state_off:
+      offset: 8
+      data: [0x00]
+    command_on: !lambda |-
+      uint8_t out2 = id(room2_outlet_2).state ? 0xff : 0x00;
+      uint8_t out3 = id(room2_outlet_3).state ? 0xff : 0x00;
+      return {{0x30, 0xbc, 0x00, 0x3b, 0x02, 0x01, 0x00, 0x00, 0xff, out2, out3, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
+    command_off: !lambda |-
+      uint8_t out2 = id(room2_outlet_2).state ? 0xff : 0x00;
+      uint8_t out3 = id(room2_outlet_3).state ? 0xff : 0x00;
+      return {{0x30, 0xbc, 0x00, 0x3b, 0x02, 0x01, 0x00, 0x00, 0x00, out2, out3, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
+    command_update:
+      data: [0x30, 0xbc, 0x00, 0x3b, 0x02, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+      ack: [0x30, 0xdc]
+    update_interval: 2h
+
+  - platform: uartex
+    name: "세나방 콘센트 2 (R2)"
+    unique_id: outlet_r2_2
+    id: room2_outlet_2
+    icon: "mdi:power-socket-de"
+    state:
+      data: [0x30, 0xd0, 0x00, 0x3b, 0x02]
+      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
+    state_on:
+      offset: 9
+      data: [0xff]
+    state_off:
+      offset: 9
+      data: [0x00]
+    command_on: !lambda |-
+      uint8_t out1 = id(room2_outlet_1).state ? 0xff : 0x00;
+      uint8_t out3 = id(room2_outlet_3).state ? 0xff : 0x00;
+      return {{0x30, 0xbc, 0x00, 0x3b, 0x02, 0x01, 0x00, 0x00, out1, 0xff, out3, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
+    command_off: !lambda |-
+      uint8_t out1 = id(room2_outlet_1).state ? 0xff : 0x00;
+      uint8_t out3 = id(room2_outlet_3).state ? 0xff : 0x00;
+      return {{0x30, 0xbc, 0x00, 0x3b, 0x02, 0x01, 0x00, 0x00, out1, 0x00, out3, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
+
+  - platform: uartex
+    name: "세나방 콘센트 3 (R2)"
+    unique_id: outlet_r2_3
+    id: room2_outlet_3
+    icon: "mdi:power-socket-de"
+    state:
+      data: [0x30, 0xd0, 0x00, 0x3b, 0x02]
+      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
+    state_on:
+      offset: 10
+      data: [0xff]
+    state_off:
+      offset: 10
+      data: [0x00]
+    command_on: !lambda |-
+      uint8_t out1 = id(room2_outlet_1).state ? 0xff : 0x00;
+      uint8_t out2 = id(room2_outlet_2).state ? 0xff : 0x00;
+      return {{0x30, 0xbc, 0x00, 0x3b, 0x02, 0x01, 0x00, 0x00, out1, out2, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
+    command_off: !lambda |-
+      uint8_t out1 = id(room2_outlet_1).state ? 0xff : 0x00;
+      uint8_t out2 = id(room2_outlet_2).state ? 0xff : 0x00;
+      return {{0x30, 0xbc, 0x00, 0x3b, 0x02, 0x01, 0x00, 0x00, out1, out2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
+
+# ============================================
+# 콘센트 제어 - 사라방 (R3)
+# ============================================
+
+  - platform: uartex
+    name: "사라방 콘센트 1 (R3)"
+    unique_id: outlet_r3_1
     id: room3_outlet_1
     icon: "mdi:power-socket-de"
     state:
@@ -821,9 +899,9 @@ switch:
       ack: [0x30, 0xdc]
     update_interval: 2h
 
-  # 사라방 콘센트 2
   - platform: uartex
-    name: "사라방 콘센트 2"
+    name: "사라방 콘센트 2 (R3)"
+    unique_id: outlet_r3_2
     id: room3_outlet_2
     icon: "mdi:power-socket-de"
     state:
@@ -844,9 +922,9 @@ switch:
       uint8_t out3 = id(room3_outlet_3).state ? 0xff : 0x00;
       return {{0x30, 0xbc, 0x00, 0x3b, 0x03, 0x01, 0x00, 0x00, out1, 0x00, out3, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
 
-  # 사라방 콘센트 3
   - platform: uartex
-    name: "사라방 콘센트 3"
+    name: "사라방 콘센트 3 (R3)"
+    unique_id: outlet_r3_3
     id: room3_outlet_3
     icon: "mdi:power-socket-de"
     state:
@@ -868,12 +946,12 @@ switch:
       return {{0x30, 0xbc, 0x00, 0x3b, 0x03, 0x01, 0x00, 0x00, out1, out2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
 
 # ============================================
-# 콘센트 제어 - 알파룸 (Room 4)
+# 콘센트 제어 - 알파룸 (R4)
 # ============================================
 
-  # 알파룸 콘센트 1
   - platform: uartex
-    name: "알파룸 콘센트 1"
+    name: "알파룸 콘센트 1 (R4)"
+    unique_id: outlet_r4_1
     id: room4_outlet_1
     icon: "mdi:power-socket-de"
     state:
@@ -898,9 +976,9 @@ switch:
       ack: [0x30, 0xdc]
     update_interval: 2h
 
-  # 알파룸 콘센트 2
   - platform: uartex
-    name: "알파룸 콘센트 2"
+    name: "알파룸 콘센트 2 (R4)"
+    unique_id: outlet_r4_2
     id: room4_outlet_2
     icon: "mdi:power-socket-de"
     state:
@@ -921,9 +999,9 @@ switch:
       uint8_t out3 = id(room4_outlet_3).state ? 0xff : 0x00;
       return {{0x30, 0xbc, 0x00, 0x3b, 0x04, 0x01, 0x00, 0x00, out1, 0x00, out3, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
 
-  # 알파룸 콘센트 3
   - platform: uartex
-    name: "알파룸 콘센트 3"
+    name: "알파룸 콘센트 3 (R4)"
+    unique_id: outlet_r4_3
     id: room4_outlet_3
     icon: "mdi:power-socket-de"
     state:
@@ -945,12 +1023,12 @@ switch:
       return {{0x30, 0xbc, 0x00, 0x3b, 0x04, 0x01, 0x00, 0x00, out1, out2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
 
 # ============================================
-# 콘센트 제어 - 주방 (Room 5)
+# 콘센트 제어 - 주방 (R5)
 # ============================================
 
-  # 주방 콘센트 1
   - platform: uartex
-    name: "주방 콘센트 1"
+    name: "주방 콘센트 1 (R5)"
+    unique_id: outlet_r5_1
     id: room5_outlet_1
     icon: "mdi:power-socket-de"
     state:
@@ -975,9 +1053,9 @@ switch:
       ack: [0x30, 0xdc]
     update_interval: 2h
 
-  # 주방 콘센트 2
   - platform: uartex
-    name: "주방 콘센트 2"
+    name: "주방 콘센트 2 (R5)"
+    unique_id: outlet_r5_2
     id: room5_outlet_2
     icon: "mdi:power-socket-de"
     state:
@@ -998,9 +1076,9 @@ switch:
       uint8_t out3 = id(room5_outlet_3).state ? 0xff : 0x00;
       return {{0x30, 0xbc, 0x00, 0x3b, 0x05, 0x01, 0x00, 0x00, out1, 0x00, out3, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
 
-  # 주방 콘센트 3
   - platform: uartex
-    name: "주방 콘센트 3"
+    name: "주방 콘센트 3 (R5)"
+    unique_id: outlet_r5_3
     id: room5_outlet_3
     icon: "mdi:power-socket-de"
     state:
@@ -1022,12 +1100,12 @@ switch:
       return {{0x30, 0xbc, 0x00, 0x3b, 0x05, 0x01, 0x00, 0x00, out1, out2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
 
 # ============================================
-# 콘센트 제어 - 거실 (Room 0)
+# 콘센트 제어 - 거실 (R0)
 # ============================================
 
-  # 거실 콘센트 1
   - platform: uartex
-    name: "거실 콘센트 1"
+    name: "거실 콘센트 1 (R0)"
+    unique_id: outlet_r0_1
     id: room0_outlet_1
     icon: "mdi:power-socket-de"
     state:
@@ -1052,9 +1130,9 @@ switch:
       ack: [0x30, 0xdc]
     update_interval: 2h
 
-  # 거실 콘센트 2
   - platform: uartex
-    name: "거실 콘센트 2"
+    name: "거실 콘센트 2 (R0)"
+    unique_id: outlet_r0_2
     id: room0_outlet_2
     icon: "mdi:power-socket-de"
     state:
@@ -1075,9 +1153,9 @@ switch:
       uint8_t out3 = id(room0_outlet_3).state ? 0xff : 0x00;
       return {{0x30, 0xbc, 0x00, 0x3b, 0x00, 0x01, 0x00, 0x00, out1, 0x00, out3, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
 
-  # 거실 콘센트 3
   - platform: uartex
-    name: "거실 콘센트 3"
+    name: "거실 콘센트 3 (R0)"
+    unique_id: outlet_r0_3
     id: room0_outlet_3
     icon: "mdi:power-socket-de"
     state:
