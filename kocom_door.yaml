@@ -5,6 +5,13 @@ uart:
   stop_bits: 1
   rx_pin: GPIO01
   tx_pin: GPIO02
+  debug:
+    direction: RX
+    dummy_receiver: true
+    after:
+      delimiter: [0x0D, 0x0D]
+    sequence:
+      - lambda: UARTDebug::log_hex(direction, bytes, ',');
 
 external_components:
   - source: github://eigger/espcomponents@latest
