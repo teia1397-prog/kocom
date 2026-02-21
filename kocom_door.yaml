@@ -5,7 +5,7 @@ logger:
     uartex: DEBUG
 
 uart:
-  baud_rate: 9600
+  baud_rate: 3800
   data_bits: 8
   parity: NONE
   stop_bits: 1
