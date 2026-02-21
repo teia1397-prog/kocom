@@ -6,7 +6,7 @@ uart:
   rx_pin: GPIO01
   tx_pin: GPIO02
   debug:
-    direction: RX
+    direction: BOTH
     dummy_receiver: true
     after:
       bytes: 10        # delimiter 대신 bytes로 변경 (뭐든 들어오면 바로 출력)
