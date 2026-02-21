@@ -24,9 +24,9 @@ external_components:
     
 uartex:
   rx_timeout: 10ms
-  tx_delay: 50ms
-  tx_timeout: 500ms
-  tx_retry_cnt: 3
+  tx_delay: 100ms
+  tx_timeout: 1000ms
+  tx_retry_cnt: 1
   rx_header: [0xAA, 0x55]
   rx_footer: [0x0D, 0x0D]
   tx_header: [0xAA, 0x55]
@@ -50,34 +50,31 @@ esphome:
   on_boot:
     priority: -100
     then:
-      - delay: 5s
+      - delay: 10s
       - logger.log: "코콤 시스템 초기화 완료"
-      - delay: 3s
-      # 보일러 상태 조회
+      - delay: 5s
       - component.update: master_room_heater
-      - delay: 2s
+      - delay: 5s
       - component.update: room2_heater
-      - delay: 2s
+      - delay: 5s
       - component.update: room3_heater
-      - delay: 2s
+      - delay: 5s
       - component.update: Alpha_room_heater
-      - delay: 2s
+      - delay: 5s
       - component.update: living_room_heater
-      - delay: 2s
-      # 가스밸브 상태 조회
+      - delay: 5s
       - component.update: gas_valve
-      - delay: 2s
-      # 콘센트 상태 조회 (각 방 1번만 - 나머지는 같은 패킷으로 함께 수신)
+      - delay: 5s
       - component.update: room1_outlet_1
-      - delay: 2s
+      - delay: 5s
       - component.update: room2_outlet_1
-      - delay: 2s
+      - delay: 5s
       - component.update: room3_outlet_1
-      - delay: 2s
+      - delay: 5s
       - component.update: room4_outlet_1
-      - delay: 2s
+      - delay: 5s
       - component.update: room5_outlet_1
-      - delay: 2s
+      - delay: 5s
       - component.update: room0_outlet_1
       - logger.log: "초기 상태 조회 완료"
 
@@ -87,10 +84,9 @@ globals:
     initial_value: '"대기"'
 
 # ============================================
-# 조명 (원하는 순서대로 재배열)
+# 조명 (7분씩 분산: 180, 187, 194, 201, 208, 215min)
 # ============================================
 light:
-  # 1. 안방 조명 (Room 1)
   - platform: uartex
     name: "안방 조명 1 (R1)"
     id: master_bedroom_light_1
@@ -112,7 +108,7 @@ light:
     command_update: 
       data: [0x30, 0xbc, 0x00, 0x0e, 0x01, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    update_interval: 120min
+    update_interval: 180min
 
   - platform: uartex
     name: "안방 조명 2 (R1)"
@@ -133,7 +129,6 @@ light:
       uint8_t light1_state = id(master_bedroom_light_1).current_values.is_on() ? 0xff : 0x00;
       return {{0x30, 0xbc, 0x00, 0x0e, 0x01, 0x00, 0x00, 0x00, light1_state, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
 
-  # 2. 세나방 (Room 2)
   - platform: uartex
     name: "세나방 조명 (R2)"
     id: room_2_light
@@ -155,9 +150,8 @@ light:
     command_update: 
       data: [0x30, 0xbc, 0x00, 0x0e, 0x02, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    update_interval: 123min
+    update_interval: 187min
 
-  # 3. 사라방 (Room 3)
   - platform: uartex
     name: "사라방 조명 (R3)"
     id: room_3_light
@@ -179,9 +173,8 @@ light:
     command_update: 
       data: [0x30, 0xbc, 0x00, 0x0e, 0x03, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    update_interval: 126min
+    update_interval: 194min
 
-  # 4. 알파룸 (Room 4)
   - platform: uartex
     name: "알파룸 조명 (R4)"
     id: Alpha_room_light
@@ -203,9 +196,8 @@ light:
     command_update: 
       data: [0x30, 0xbc, 0x00, 0x0e, 0x04, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    update_interval: 129min
+    update_interval: 201min
 
-  # 5. 거실 조명 (Room 0)
   - platform: uartex
     name: "거실 조명 1 (R0)"
     id: living_room_light_1
@@ -227,7 +219,7 @@ light:
     command_update: 
       data: [0x30, 0xbc, 0x00, 0x0e, 0x00, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    update_interval: 141min
+    update_interval: 208min
 
   - platform: uartex
     name: "거실 조명 2 (R0)"
@@ -248,7 +240,6 @@ light:
       uint8_t light1_state = id(living_room_light_1).current_values.is_on() ? 0xff : 0x00;
       return {{0x30, 0xbc, 0x00, 0x0e, 0x00, 0x00, 0x00, 0x00, light1_state, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
 
-  # 6. 주방 조명 (Room 5)
   - platform: uartex
     name: "주방 조명 1 (R5)"
     id: kitchen_light_1
@@ -272,7 +263,7 @@ light:
     command_update: 
       data: [0x30, 0xbc, 0x00, 0x0e, 0x05, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    update_interval: 132min
+    update_interval: 215min
 
   - platform: uartex
     name: "주방 조명 2 (R5)"
@@ -317,10 +308,9 @@ light:
       return {{0x30,0xbc,0x00,0x0e,0x05,0x00,0x00,0x00,l1,l2,0x00,0x00,0x00,0x00,0x00,0x00},{0x30,0xdc}};
 
 # ============================================
-# 보일러 (원하는 순서대로 재배열)
+# 보일러 (10분씩 분산: 183, 193, 203, 213, 223min)
 # ============================================
 climate:
-  # 1. 안방 보일러 (Room 1)
   - platform: uartex
     name: "안방 보일러 (R1)"
     id: master_room_heater
@@ -378,9 +368,8 @@ climate:
     command_update: 
       data: [0x30, 0xbc, 0x00, 0x36, 0x01, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    update_interval: 2h
+    update_interval: 183min
 
-  # 2. 세나방 보일러 (Room 2)
   - platform: uartex
     name: "세나방 보일러 (R2)"
     id: room2_heater
@@ -438,9 +427,8 @@ climate:
     command_update: 
       data: [0x30, 0xbc, 0x00, 0x36, 0x02, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    update_interval: 2h
+    update_interval: 193min
 
-  # 3. 사라방 보일러 (Room 3)
   - platform: uartex
     name: "사라방 보일러 (R3)"
     id: room3_heater
@@ -498,9 +486,8 @@ climate:
     command_update: 
       data: [0x30, 0xbc, 0x00, 0x36, 0x03, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    update_interval: 2h
+    update_interval: 203min
 
-  # 4. 알파룸 보일러 (Room 4)
   - platform: uartex
     name: "알파룸 보일러 (R4)"
     id: Alpha_room_heater
@@ -558,9 +545,8 @@ climate:
     command_update: 
       data: [0x30, 0xbc, 0x00, 0x36, 0x04, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    update_interval: 2h
+    update_interval: 213min
 
-  # 5. 거실 보일러 (Room 0)
   - platform: uartex
     name: "거실 보일러 (R0)"
     id: living_room_heater
@@ -618,7 +604,7 @@ climate:
     command_update: 
       data: [0x30, 0xbc, 0x00, 0x36, 0x00, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    update_interval: 2h
+    update_interval: 223min
 
 # ============================================
 # 기타 장치들
@@ -722,7 +708,7 @@ valve:
     command_update: 
       data: [0x30, 0xbc, 0x00, 0x2c, 0x00, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    update_interval: 2h
+    update_interval: 198min
 
 switch:
   - platform: template
@@ -743,7 +729,7 @@ switch:
       - logger.log: "일괄소등 완료 - 모든 조명 꺼짐"
 
 # ============================================
-# 콘센트 제어 - 안방 (R1)
+# 콘센트 (8분씩 분산: 185, 193, 201, 209, 217, 225min)
 # ============================================
 
   - platform: uartex
@@ -770,7 +756,7 @@ switch:
     command_update:
       data: [0x30, 0xbc, 0x00, 0x3b, 0x01, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    update_interval: 2h
+    update_interval: 185min
 
   - platform: uartex
     name: "안방 콘센트 2 (R1)"
@@ -816,10 +802,6 @@ switch:
       uint8_t out2 = id(room1_outlet_2).state ? 0xff : 0x00;
       return {{0x30, 0xbc, 0x00, 0x3b, 0x01, 0x01, 0x00, 0x00, out1, out2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
 
-# ============================================
-# 콘센트 제어 - 세나방 (R2)
-# ============================================
-
   - platform: uartex
     name: "세나방 콘센트 1 (R2)"
     id: room2_outlet_1
@@ -844,7 +826,7 @@ switch:
     command_update:
       data: [0x30, 0xbc, 0x00, 0x3b, 0x02, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    update_interval: 2h
+    update_interval: 193min
 
   - platform: uartex
     name: "세나방 콘센트 2 (R2)"
@@ -890,10 +872,6 @@ switch:
       uint8_t out2 = id(room2_outlet_2).state ? 0xff : 0x00;
       return {{0x30, 0xbc, 0x00, 0x3b, 0x02, 0x01, 0x00, 0x00, out1, out2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
 
-# ============================================
-# 콘센트 제어 - 사라방 (R3)
-# ============================================
-
   - platform: uartex
     name: "사라방 콘센트 1 (R3)"
     id: room3_outlet_1
@@ -918,7 +896,7 @@ switch:
     command_update:
       data: [0x30, 0xbc, 0x00, 0x3b, 0x03, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    update_interval: 2h
+    update_interval: 201min
 
   - platform: uartex
     name: "사라방 콘센트 2 (R3)"
@@ -964,10 +942,6 @@ switch:
       uint8_t out2 = id(room3_outlet_2).state ? 0xff : 0x00;
       return {{0x30, 0xbc, 0x00, 0x3b, 0x03, 0x01, 0x00, 0x00, out1, out2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
 
-# ============================================
-# 콘센트 제어 - 알파룸 (R4)
-# ============================================
-
   - platform: uartex
     name: "알파룸 콘센트 1 (R4)"
     id: room4_outlet_1
@@ -992,7 +966,7 @@ switch:
     command_update:
       data: [0x30, 0xbc, 0x00, 0x3b, 0x04, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    update_interval: 2h
+    update_interval: 209min
 
   - platform: uartex
     name: "알파룸 콘센트 2 (R4)"
@@ -1038,10 +1012,6 @@ switch:
       uint8_t out2 = id(room4_outlet_2).state ? 0xff : 0x00;
       return {{0x30, 0xbc, 0x00, 0x3b, 0x04, 0x01, 0x00, 0x00, out1, out2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
 
-# ============================================
-# 콘센트 제어 - 주방 (R5)
-# ============================================
-
   - platform: uartex
     name: "주방 콘센트 1 (R5)"
     id: room5_outlet_1
@@ -1064,7 +1034,7 @@ switch:
     command_update:
       data: [0x30, 0xbc, 0x00, 0x3b, 0x05, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    update_interval: 2h
+    update_interval: 217min
 
   - platform: uartex
     name: "주방 콘센트 2 (R5)"
@@ -1085,10 +1055,6 @@ switch:
     command_off: !lambda |-
       uint8_t out1 = id(room5_outlet_1).state ? 0xff : 0x00;
       return {{0x30, 0xbc, 0x00, 0x3b, 0x05, 0x01, 0x00, 0x00, out1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
-
-# ============================================
-# 콘센트 제어 - 거실 (R0)
-# ============================================
 
   - platform: uartex
     name: "거실 콘센트 1 (R0)"
@@ -1112,7 +1078,7 @@ switch:
     command_update:
       data: [0x30, 0xbc, 0x00, 0x3b, 0x00, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    update_interval: 2h
+    update_interval: 225min
 
   - platform: uartex
     name: "거실 콘센트 2 (R0)"
