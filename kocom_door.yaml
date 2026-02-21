@@ -1,5 +1,5 @@
 uart:
-  baud_rate: 4800
+  baud_rate: 9600      # 안되면 4800 → 2400 → 19200 순서로 변경
   data_bits: 8
   parity: NONE
   stop_bits: 1
@@ -9,9 +9,9 @@ uart:
     direction: RX
     dummy_receiver: true
     after:
-      delimiter: [0x0D, 0x0D]
+      bytes: 10        # delimiter 대신 bytes로 변경 (뭐든 들어오면 바로 출력)
     sequence:
-      - lambda: UARTDebug::log_hex(direction, bytes, ',');
+      - lambda: UARTDebug::log_hex(direction, bytes, ':');
 
 external_components:
   - source: github://eigger/espcomponents@latest
