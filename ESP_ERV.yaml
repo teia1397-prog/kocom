@@ -1,3 +1,50 @@
+uart:
+  id: uart_bus
+  baud_rate: 9600
+  data_bits: 8
+  parity: NONE
+  stop_bits: 1
+  rx_pin: GPIO01
+  tx_pin: GPIO02
+  debug:
+    direction: BOTH
+    dummy_receiver: false
+    after:
+      delimiter: [0x0D, 0x0D]
+    sequence:
+      - lambda: |-
+          ESP_LOGI("uart_debug", "Direction: %s, Bytes: %s", 
+            direction == uart::UART_DIRECTION_RX ? "RX" : "TX",
+            format_hex_pretty(bytes).c_str());
+
+external_components:
+  - source: github://eigger/espcomponents@latest
+    components: [uartex]
+    refresh: always
+    
+uartex:
+  rx_timeout: 10ms
+  tx_delay: 100ms
+  tx_timeout: 1000ms
+  tx_retry_cnt: 1
+  rx_header: [0xAA, 0x55]
+  rx_footer: [0x0D, 0x0D]
+  tx_header: [0xAA, 0x55]
+  tx_footer: [0x0D, 0x0D]
+  rx_checksum: add_no_header
+  tx_checksum: add_no_header
+  version:
+    disabled: False
+  error:
+    disabled: False
+  log:
+    disabled: False
+
+logger:
+  level: DEBUG
+  logs:
+    uart_debug: DEBUG
+    uartex: DEBUG
   # 거실 전체 환풍기 (Room 0) - 0x48 디바이스 사용
   - platform: uartex
     name: "Living Room Ventilation"
