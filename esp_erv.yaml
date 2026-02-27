@@ -13,7 +13,7 @@ uart:
       delimiter: [0x0D, 0x0D]
     sequence:
       - lambda: |-
-          ESP_LOGI("uart_debug", "Direction: %s, Bytes: %s", 
+          ESP_LOGI("uart_debug", "Direction: %s, Bytes: %s",
             direction == uart::UART_DIRECTION_RX ? "RX" : "TX",
             format_hex_pretty(bytes).c_str());
 
@@ -49,17 +49,22 @@ logger:
     uart_debug: DEBUG
     uartex: DEBUG
 
-# ─────────────────────────────────────────────
-# 전열/바이패스 fan (풍량 슬라이더 포함)
-# 자동/취침 switch (풍량 없음)
+# ═══════════════════════════════════════════════════════
+# 구조:
+#   전열/바이패스 → uartex fan (풍량 슬라이더 포함)
+#   자동/취침     → template switch (uartex.write 직접)
 #
-# 라디오버튼 방식:
-#   하나 켜면 → 패킷 전송 + 나머지 3개 UI만 OFF
-#   fan.turn_off 대신 template switch로 UI 상태만 제어
-#   꺼짐 방지를 위해 모든 command_off는 전열모드로 fallback
-# ─────────────────────────────────────────────
+# 라디오버튼: on_turn_on에서 나머지 3개 끄기
+# 꺼짐방지: fan command_off = command_on과 동일 패킷
+#           template switch turn_off = turn_on 재실행
+# 초기 약풍: command_on = 0x40(약), state_speed 제거
+#            (state_speed가 월패드 현재값 읽어서 강으로 덮어쓰는 문제 해결)
+# ═══════════════════════════════════════════════════════
 
 fan:
+  # ─────────────────────────────
+  # 전열모드 (Heat Exchange)
+  # ─────────────────────────────
   - platform: uartex
     name: "ERV Heat Exchange"
     id: erv_heat
@@ -72,17 +77,11 @@ fan:
     state_off:
       offset: 8
       data: [0x00]
-    state_speed: !lambda |-
-      if (check_value(10, 0x40, data, len)) return 1;
-      if (check_value(10, 0x80, data, len)) return 2;
-      if (check_value(10, 0xc0, data, len)) return 3;
-      return 0;
     command_on:
-      # 항상 1단(약 0x40)으로 시작
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     command_off:
-      # OFF 눌러도 전열 1단으로 유지 (꺼짐 방지)
+      # OFF 눌러도 꺼지지 않고 약풍 유지
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     command_speed: !lambda |-
@@ -90,15 +89,14 @@ fan:
       uint8_t speed_map[] = {0x00, 0x40, 0x80, 0xc0};
       uint8_t spd = (idx >= 1 && idx <= 3) ? speed_map[idx] : 0x40;
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, spd, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
-    command_update:
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    update_interval: 30s
     on_turn_on:
+      - fan.turn_off: erv_bypass
       - switch.turn_off: erv_auto
       - switch.turn_off: erv_sleep
-      - fan.turn_off: erv_bypass
 
+  # ─────────────────────────────
+  # 바이패스모드 (Bypass)
+  # ─────────────────────────────
   - platform: uartex
     name: "ERV Bypass"
     id: erv_bypass
@@ -111,17 +109,11 @@ fan:
     state_off:
       offset: 8
       data: [0x00]
-    state_speed: !lambda |-
-      if (check_value(10, 0x40, data, len)) return 1;
-      if (check_value(10, 0x80, data, len)) return 2;
-      if (check_value(10, 0xc0, data, len)) return 3;
-      return 0;
     command_on:
-      # 항상 1단(약 0x40)으로 시작
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     command_off:
-      # OFF 눌러도 바이패스 1단으로 유지 (꺼짐 방지)
+      # OFF 눌러도 꺼지지 않고 약풍 유지
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     command_speed: !lambda |-
@@ -129,60 +121,47 @@ fan:
       uint8_t speed_map[] = {0x00, 0x40, 0x80, 0xc0};
       uint8_t spd = (idx >= 1 && idx <= 3) ? speed_map[idx] : 0x40;
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, spd, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
-    command_update:
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    update_interval: 30s
     on_turn_on:
+      - fan.turn_off: erv_heat
       - switch.turn_off: erv_auto
       - switch.turn_off: erv_sleep
-      - fan.turn_off: erv_heat
 
 switch:
-  - platform: uartex
+  # ─────────────────────────────
+  # 자동모드 (Auto) - template
+  # uartex switch 쓰면 command_off 패킷이 전송돼서 오작동
+  # ─────────────────────────────
+  - platform: template
     name: "ERV Auto"
     id: erv_auto
-    state:
-      data: [0x30, 0xdc, 0x00, 0x48, 0x00]
-      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
-    state_on:
-      offset: 9
-      data: [0x02]
-    state_off:
-      offset: 8
-      data: [0x00]
-    command_on:
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x02, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    command_off:
-      # OFF 눌러도 자동모드 유지
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x02, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    on_turn_on:
+    optimistic: true
+    turn_on_action:
+      - uartex.write:
+          data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x02, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
+          ack: [0x30, 0xdc]
       - fan.turn_off: erv_heat
       - fan.turn_off: erv_bypass
       - switch.turn_off: erv_sleep
+      - logger.log: "Mode: Auto"
+    turn_off_action:
+      # OFF 눌러도 자동모드 유지 (라디오버튼)
+      - switch.turn_on: erv_auto
 
-  - platform: uartex
+  # ─────────────────────────────
+  # 취침모드 (Sleep) - template
+  # ─────────────────────────────
+  - platform: template
     name: "ERV Sleep"
     id: erv_sleep
-    state:
-      data: [0x30, 0xdc, 0x00, 0x48, 0x00]
-      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
-    state_on:
-      offset: 9
-      data: [0x05]
-    state_off:
-      offset: 8
-      data: [0x00]
-    command_on:
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x05, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    command_off:
-      # OFF 눌러도 취침모드 유지
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x05, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    on_turn_on:
+    optimistic: true
+    turn_on_action:
+      - uartex.write:
+          data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x05, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
+          ack: [0x30, 0xdc]
       - fan.turn_off: erv_heat
       - fan.turn_off: erv_bypass
       - switch.turn_off: erv_auto
+      - logger.log: "Mode: Sleep"
+    turn_off_action:
+      # OFF 눌러도 취침모드 유지 (라디오버튼)
+      - switch.turn_on: erv_sleep
