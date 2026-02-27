@@ -49,19 +49,9 @@ logger:
     uart_debug: DEBUG
     uartex: DEBUG
 
-# ═══════════════════════════════════════════════════════════════
-# 검증된 패킷 구조
-# offset 8  = 모드: 0x11=전열ON / 0x00=OFF  ✅
-# offset 9  = 풍량: 0x01=약 / 0x02=중 / 0x03=강  ✅
-# offset 12 = 전원: 0x40=ON / 0x00=OFF  ✅
-# ═══════════════════════════════════════════════════════════════
-
 switch:
-  # ─────────────────────────────────────────────
-  # 전원 ON/OFF (마지막 설정 속도로 켜짐)
-  # ─────────────────────────────────────────────
   - platform: uartex
-    name: "전열교환기 전원"
+    name: "ERV Power"
     id: erv_power
     state:
       data: [0x30, 0xdc, 0x00, 0x48, 0x00]
@@ -73,22 +63,18 @@ switch:
       offset: 12
       data: [0x00]
     command_on:
-      # 전열모드(0x11) + 중(0x02) 기본값으로 켜기 ✅
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x02, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     command_off:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     on_turn_on:
-      - logger.log: "전열교환기 전원 ON"
+      - logger.log: "ERV Power ON"
     on_turn_off:
-      - logger.log: "전열교환기 전원 OFF"
+      - logger.log: "ERV Power OFF"
 
-  # ─────────────────────────────────────────────
-  # 풍량 약 (1단) - 켜면서 속도 변경
-  # ─────────────────────────────────────────────
   - platform: uartex
-    name: "전열교환기 약풍"
+    name: "ERV Fan Low"
     id: erv_fan_low
     state:
       data: [0x30, 0xdc, 0x00, 0x48, 0x00]
@@ -106,13 +92,10 @@ switch:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     on_turn_on:
-      - logger.log: "풍량: 약 (1단)"
+      - logger.log: "Fan Low"
 
-  # ─────────────────────────────────────────────
-  # 풍량 중 (2단)
-  # ─────────────────────────────────────────────
   - platform: uartex
-    name: "전열교환기 중풍"
+    name: "ERV Fan Medium"
     id: erv_fan_mid
     state:
       data: [0x30, 0xdc, 0x00, 0x48, 0x00]
@@ -130,13 +113,10 @@ switch:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     on_turn_on:
-      - logger.log: "풍량: 중 (2단)"
+      - logger.log: "Fan Medium"
 
-  # ─────────────────────────────────────────────
-  # 풍량 강 (3단)
-  # ─────────────────────────────────────────────
   - platform: uartex
-    name: "전열교환기 강풍"
+    name: "ERV Fan High"
     id: erv_fan_high
     state:
       data: [0x30, 0xdc, 0x00, 0x48, 0x00]
@@ -154,13 +134,10 @@ switch:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     on_turn_on:
-      - logger.log: "풍량: 강 (3단)"
+      - logger.log: "Fan High"
 
-  # ─────────────────────────────────────────────
-  # 모드 선택 (models.py 기반, 전열 제외 추정값)
-  # ─────────────────────────────────────────────
   - platform: uartex
-    name: "전열교환기 환기모드"
+    name: "ERV Mode Ventilation"
     id: erv_mode_vent
     state:
       data: [0x30, 0xdc, 0x00, 0x48, 0x00]
@@ -178,10 +155,10 @@ switch:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     on_turn_on:
-      - logger.log: "모드: 환기"
+      - logger.log: "Mode Ventilation"
 
   - platform: uartex
-    name: "전열교환기 자동모드"
+    name: "ERV Mode Auto"
     id: erv_mode_auto
     state:
       data: [0x30, 0xdc, 0x00, 0x48, 0x00]
@@ -199,10 +176,10 @@ switch:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     on_turn_on:
-      - logger.log: "모드: 자동"
+      - logger.log: "Mode Auto"
 
   - platform: uartex
-    name: "전열교환기 바이패스모드"
+    name: "ERV Mode Bypass"
     id: erv_mode_bypass
     state:
       data: [0x30, 0xdc, 0x00, 0x48, 0x00]
@@ -220,10 +197,10 @@ switch:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     on_turn_on:
-      - logger.log: "모드: 바이패스"
+      - logger.log: "Mode Bypass"
 
   - platform: uartex
-    name: "전열교환기 취침모드"
+    name: "ERV Mode Sleep"
     id: erv_mode_sleep
     state:
       data: [0x30, 0xdc, 0x00, 0x48, 0x00]
@@ -241,10 +218,10 @@ switch:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     on_turn_on:
-      - logger.log: "모드: 취침 (약풍 고정)"
+      - logger.log: "Mode Sleep"
 
   - platform: uartex
-    name: "전열교환기 공기청정모드"
+    name: "ERV Mode Air Purification"
     id: erv_mode_airpuri
     state:
       data: [0x30, 0xdc, 0x00, 0x48, 0x00]
@@ -262,4 +239,4 @@ switch:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     on_turn_on:
-      - logger.log: "모드: 공기청정"
+      - logger.log: "Mode Air Purification"
