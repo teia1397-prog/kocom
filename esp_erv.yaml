@@ -1,7 +1,58 @@
+uart:
+  id: uart_bus
+  baud_rate: 9600
+  data_bits: 8
+  parity: NONE
+  stop_bits: 1
+  rx_pin: GPIO01
+  tx_pin: GPIO02
+  debug:
+    direction: BOTH
+    dummy_receiver: false
+    after:
+      delimiter: [0x0D, 0x0D]
+    sequence:
+      - lambda: |-
+          ESP_LOGI("uart_debug", "Direction: %s, Bytes: %s", 
+            direction == uart::UART_DIRECTION_RX ? "RX" : "TX",
+            format_hex_pretty(bytes).c_str());
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/eigger/espcomponents
+      ref: master
+    components: [uartex]
+    refresh: always
+
+uartex:
+  rx_timeout: 10ms
+  tx_delay: 100ms
+  tx_timeout: 1000ms
+  tx_retry_cnt: 1
+  rx_header: [0xAA, 0x55]
+  rx_footer: [0x0D, 0x0D]
+  tx_header: [0xAA, 0x55]
+  tx_footer: [0x0D, 0x0D]
+  rx_checksum: add_no_header
+  tx_checksum: add_no_header
+  version:
+    disabled: False
+  error:
+    disabled: False
+  log:
+    disabled: False
+
+logger:
+  level: DEBUG
+  logs:
+    uart_debug: DEBUG
+    uartex: DEBUG
+
 switch:
-  # ─────────────────────────────
-  # 전열교환기 전원 ON/OFF (전열모드 + 풍량2단 기본)
-  # ─────────────────────────────
+  # ─────────────────────────────────────────────────────
+  # 전열교환기 전원 ON/OFF (전열모드 + 풍량 2단 기본값)
+  # ─────────────────────────────────────────────────────
   - platform: uartex
     name: "전열교환기 전원"
     id: erv_power
@@ -21,13 +72,18 @@ switch:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     on_turn_on:
-      - logger.log: "전열교환기 켜짐"
+      - logger.log: "전열교환기 전원 ON (전열모드 2단)"
     on_turn_off:
-      - logger.log: "전열교환기 꺼짐"
+      - logger.log: "전열교환기 전원 OFF"
 
-  # ─────────────────────────────
-  # 모드 선택 (전열 / 환기 / 바이패스)
-  # ─────────────────────────────
+  # ─────────────────────────────────────────────────────
+  # 모드 선택
+  # offset 8 = 모드
+  #   0x11 = 전열모드 (검증됨)
+  #   0x01 = 환기모드 (추정)
+  #   0x21 = 바이패스모드 (추정)
+  #   0x31 = 취침모드 (추정)
+  # ─────────────────────────────────────────────────────
   - platform: uartex
     name: "전열교환기 전열모드"
     id: erv_mode_heat_exchange
@@ -41,14 +97,16 @@ switch:
       offset: 8
       data: [0x00]
     command_on:
-      # offset8=0x11(전열모드), offset9=0x02(2단)
+      # 전열모드(0x11) + 풍량 2단(0x02)
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x02, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     command_off:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     on_turn_on:
-      - logger.log: "모드: 전열"
+      - logger.log: "모드 변경: 전열모드"
+    on_turn_off:
+      - logger.log: "전열모드 OFF"
 
   - platform: uartex
     name: "전열교환기 환기모드"
@@ -63,14 +121,16 @@ switch:
       offset: 8
       data: [0x00]
     command_on:
-      # offset8=0x01(환기모드), offset9=0x02(2단)
+      # 환기모드(0x01) + 풍량 2단(0x02) - 추정값, 월패드 캡처로 검증 필요
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x01, 0x02, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     command_off:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     on_turn_on:
-      - logger.log: "모드: 환기"
+      - logger.log: "모드 변경: 환기모드 (추정값)"
+    on_turn_off:
+      - logger.log: "환기모드 OFF"
 
   - platform: uartex
     name: "전열교환기 바이패스모드"
@@ -85,21 +145,51 @@ switch:
       offset: 8
       data: [0x00]
     command_on:
-      # offset8=0x21(바이패스 추정), offset9=0x02(2단)
+      # 바이패스모드(0x21) + 풍량 2단(0x02) - 추정값, 월패드 캡처로 검증 필요
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x21, 0x02, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     command_off:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     on_turn_on:
-      - logger.log: "모드: 바이패스 (추정값, 캡처 검증 필요)"
+      - logger.log: "모드 변경: 바이패스모드 (추정값)"
+    on_turn_off:
+      - logger.log: "바이패스모드 OFF"
 
-  # ─────────────────────────────
-  # 풍량 1단 / 2단 / 3단
-  # ─────────────────────────────
+  - platform: uartex
+    name: "전열교환기 취침모드"
+    id: erv_mode_sleep
+    state:
+      data: [0x30, 0xdc, 0x00, 0x48, 0x00]
+      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
+    state_on:
+      offset: 8
+      data: [0x31]
+    state_off:
+      offset: 8
+      data: [0x00]
+    command_on:
+      # 취침모드(0x31) + 풍량 1단(0x01) - 추정값, 월패드 캡처로 검증 필요
+      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x31, 0x01, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00]
+      ack: [0x30, 0xdc]
+    command_off:
+      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+      ack: [0x30, 0xdc]
+    on_turn_on:
+      - logger.log: "모드 변경: 취침모드 (추정값)"
+    on_turn_off:
+      - logger.log: "취침모드 OFF"
+
+  # ─────────────────────────────────────────────────────
+  # 풍량 선택
+  # offset 9 = 풍량
+  #   0x01 = 1단 (약풍)
+  #   0x02 = 2단 (중풍) - 검증됨
+  #   0x03 = 3단 (강풍) (추정)
+  # ─────────────────────────────────────────────────────
   - platform: uartex
     name: "전열교환기 풍량 1단"
-    id: erv_fan_speed_1
+    id: erv_fan_1
     state:
       data: [0x30, 0xdc, 0x00, 0x48, 0x00]
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
@@ -110,18 +200,20 @@ switch:
       offset: 9
       data: [0x00]
     command_on:
-      # 전열모드 + 풍량 1단
+      # 전열모드(0x11) + 풍량 1단(0x01)
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     command_off:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     on_turn_on:
-      - logger.log: "풍량: 1단"
+      - logger.log: "풍량: 1단 (약풍)"
+    on_turn_off:
+      - logger.log: "풍량 1단 OFF"
 
   - platform: uartex
     name: "전열교환기 풍량 2단"
-    id: erv_fan_speed_2
+    id: erv_fan_2
     state:
       data: [0x30, 0xdc, 0x00, 0x48, 0x00]
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
@@ -132,18 +224,20 @@ switch:
       offset: 9
       data: [0x00]
     command_on:
-      # 전열모드 + 풍량 2단
+      # 전열모드(0x11) + 풍량 2단(0x02) - 검증됨
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x02, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     command_off:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     on_turn_on:
-      - logger.log: "풍량: 2단"
+      - logger.log: "풍량: 2단 (중풍)"
+    on_turn_off:
+      - logger.log: "풍량 2단 OFF"
 
   - platform: uartex
     name: "전열교환기 풍량 3단"
-    id: erv_fan_speed_3
+    id: erv_fan_3
     state:
       data: [0x30, 0xdc, 0x00, 0x48, 0x00]
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
@@ -154,38 +248,13 @@ switch:
       offset: 9
       data: [0x00]
     command_on:
-      # 전열모드 + 풍량 3단
+      # 전열모드(0x11) + 풍량 3단(0x03) - 추정값, 월패드 캡처로 검증 필요
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     command_off:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     on_turn_on:
-      - logger.log: "풍량: 3단"
-
-  # ─────────────────────────────
-  # 취침모드 (풍량 자동 낮춤)
-  # ─────────────────────────────
-  - platform: uartex
-    name: "전열교환기 취침모드"
-    id: erv_sleep_mode
-    state:
-      data: [0x30, 0xdc, 0x00, 0x48, 0x00]
-      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
-    state_on:
-      offset: 8
-      data: [0x31]   # 취침모드 추정값 (전열+취침 플래그)
-    state_off:
-      offset: 8
-      data: [0x00]
-    command_on:
-      # offset8=0x31(취침모드 추정), offset9=0x01(1단 저속)
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x31, 0x01, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    command_off:
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    on_turn_on:
-      - logger.log: "취침모드 ON (추정값, 캡처 검증 필요)"
+      - logger.log: "풍량: 3단 (강풍) (추정값)"
     on_turn_off:
-      - logger.log: "취침모드 OFF"
+      - logger.log: "풍량 3단 OFF"
