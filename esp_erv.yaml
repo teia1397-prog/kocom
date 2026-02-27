@@ -49,32 +49,11 @@ logger:
     uart_debug: DEBUG
     uartex: DEBUG
 
-# ═══════════════════════════════════════════════════════════════
-# switch로 직접 검증된 패킷 구조 (이 구조만 신뢰)
-#
-# TX ON  ✅: 30 BC 00 48 00 01 00 00 [MODE] [FAN] 00 00 40 00 00 00
-# TX OFF ✅: 30 BC 00 48 00 01 00 00  00     00   00 00 00 00 00 00
-# RX state : 30 DC 00 48 00 ...
-#
-# offset 8  = 모드 (models.py 기반):
-#   0x11 = 환기(ventilation)
-#   0x12 = 자동(auto) ✅
-#   0x13 = 바이패스(bypass)
-#   0x15 = 취침(sleep)
-#   0x18 = 공기청정(air purification)
-#
-# offset 9  = 풍량:
-#   0x01 = 약(low)
-#   0x02 = 중(medium) ✅
-#   0x03 = 강(high)
-#
-# offset 12 = 전원: 0x40=ON ✅ / 0x00=OFF ✅
-# ═══════════════════════════════════════════════════════════════
-
-fan:
+switch:
+  # ✅ 최초에 동작 확인된 패킷 그대로
   - platform: uartex
-    name: "전열교환기"
-    id: erv_fan
+    name: "ERV ON"
+    id: erv_on
     state:
       data: [0x30, 0xdc, 0x00, 0x48, 0x00]
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
@@ -84,26 +63,13 @@ fan:
     state_off:
       offset: 12
       data: [0x00]
-    state_speed: !lambda |-
-      if (check_value(9, 0x01, data, len)) return 1;
-      if (check_value(9, 0x02, data, len)) return 2;
-      if (check_value(9, 0x03, data, len)) return 3;
-      return 0;
     command_on:
-      # ✅ switch에서 검증된 패킷 그대로 (자동모드 0x12 + 중 0x02)
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x12, 0x02, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00]
+      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     command_off:
-      # ✅ switch에서 검증된 패킷 그대로
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    command_speed: !lambda |-
-      // offset9 풍량: 1=약(0x01) / 2=중(0x02) / 3=강(0x03)
-      // offset12 ON 플래그(0x40) 유지
-      int idx = (int)x;
-      uint8_t spd = (idx >= 1 && idx <= 3) ? (uint8_t)idx : 0x02;
-      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x12, spd, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00},{0x30, 0xdc}};
-    command_update:
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    update_interval: 30s
+    on_turn_on:
+      - logger.log: "ERV ON ✅ 최초 검증 패킷"
+    on_turn_off:
+      - logger.log: "ERV OFF"
