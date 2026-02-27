@@ -51,19 +51,31 @@ logger:
 
 # ═══════════════════════════════════════════════════════
 # 구조:
-#   전열/바이패스 → uartex fan (풍량 슬라이더 포함)
-#   자동/취침     → template switch (uartex.write 직접)
+#   전열/바이패스 → uartex switch (ON/OFF만, 풍량 없음)
+#   자동/취침     → template switch
+#   풍량          → template select (약/중/강)
 #
-# 라디오버튼: on_turn_on에서 나머지 3개 끄기
-# 꺼짐방지: fan command_off = command_on과 동일 패킷
-#           template switch turn_off = turn_on 재실행
-# 초기 약풍: command_on = 0x40(약), state_speed 제거
-#            (state_speed가 월패드 현재값 읽어서 강으로 덮어쓰는 문제 해결)
+# 문제 원인:
+#   uartex fan의 state_speed가 RX에서 강(3)을 읽어오면
+#   ESPHome이 자동으로 command_speed(3)을 전송해서
+#   command_on의 약풍을 덮어쓰고, 슬라이더 조작시
+#   command_off가 전송되어 꺼짐
+#
+# 해결:
+#   fan 플랫폼 완전히 제거
+#   전열/바이패스를 uartex switch로
+#   풍량은 template select로 별도 제어
 # ═══════════════════════════════════════════════════════
 
-fan:
+globals:
+  - id: current_mode
+    type: uint8_t
+    restore_value: true
+    initial_value: '0x01'  # 전열
+
+switch:
   # ─────────────────────────────
-  # 전열모드 (Heat Exchange)
+  # 전열모드
   # ─────────────────────────────
   - platform: uartex
     name: "ERV Heat Exchange"
@@ -77,30 +89,24 @@ fan:
     state_off:
       offset: 8
       data: [0x00]
-    state_speed: !lambda |-
-      if (check_value(10, 0x40, data, len)) return 1;
-      if (check_value(10, 0x80, data, len)) return 2;
-      if (check_value(10, 0xc0, data, len)) return 3;
-      return 1;
     command_on:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     command_off:
-      # OFF 눌러도 꺼지지 않고 약풍 유지
+      # OFF 눌러도 전열 약풍 유지
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    command_speed: !lambda |-
-      int idx = (int)x;
-      uint8_t speed_map[] = {0x00, 0x40, 0x80, 0xc0};
-      uint8_t spd = (idx >= 1 && idx <= 3) ? speed_map[idx] : 0x40;
-      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, spd, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_turn_on:
-      - fan.turn_off: erv_bypass
+      - lambda: 'id(current_mode) = 0x01;'
+      - switch.turn_off: erv_bypass
       - switch.turn_off: erv_auto
       - switch.turn_off: erv_sleep
+      - select.set:
+          id: erv_speed
+          option: "약"
 
   # ─────────────────────────────
-  # 바이패스모드 (Bypass)
+  # 바이패스모드
   # ─────────────────────────────
   - platform: uartex
     name: "ERV Bypass"
@@ -114,64 +120,94 @@ fan:
     state_off:
       offset: 8
       data: [0x00]
-    state_speed: !lambda |-
-      if (check_value(10, 0x40, data, len)) return 1;
-      if (check_value(10, 0x80, data, len)) return 2;
-      if (check_value(10, 0xc0, data, len)) return 3;
-      return 1;
     command_on:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     command_off:
-      # OFF 눌러도 꺼지지 않고 약풍 유지
+      # OFF 눌러도 바이패스 약풍 유지
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
-    command_speed: !lambda |-
-      int idx = (int)x;
-      uint8_t speed_map[] = {0x00, 0x40, 0x80, 0xc0};
-      uint8_t spd = (idx >= 1 && idx <= 3) ? speed_map[idx] : 0x40;
-      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, spd, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_turn_on:
-      - fan.turn_off: erv_heat
+      - lambda: 'id(current_mode) = 0x03;'
+      - switch.turn_off: erv_heat
       - switch.turn_off: erv_auto
       - switch.turn_off: erv_sleep
+      - select.set:
+          id: erv_speed
+          option: "약"
 
-switch:
   # ─────────────────────────────
-  # 자동모드 (Auto) - template
-  # uartex switch 쓰면 command_off 패킷이 전송돼서 오작동
+  # 자동모드
   # ─────────────────────────────
   - platform: template
     name: "ERV Auto"
     id: erv_auto
     optimistic: true
     turn_on_action:
+      - lambda: 'id(current_mode) = 0x02;'
       - uartex.write:
           data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x02, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
           ack: [0x30, 0xdc]
-      - fan.turn_off: erv_heat
-      - fan.turn_off: erv_bypass
+      - switch.turn_off: erv_heat
+      - switch.turn_off: erv_bypass
       - switch.turn_off: erv_sleep
       - logger.log: "Mode: Auto"
     turn_off_action:
-      # OFF 눌러도 자동모드 유지 (라디오버튼)
       - switch.turn_on: erv_auto
 
   # ─────────────────────────────
-  # 취침모드 (Sleep) - template
+  # 취침모드
   # ─────────────────────────────
   - platform: template
     name: "ERV Sleep"
     id: erv_sleep
     optimistic: true
     turn_on_action:
+      - lambda: 'id(current_mode) = 0x05;'
       - uartex.write:
           data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x05, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
           ack: [0x30, 0xdc]
-      - fan.turn_off: erv_heat
-      - fan.turn_off: erv_bypass
+      - switch.turn_off: erv_heat
+      - switch.turn_off: erv_bypass
       - switch.turn_off: erv_auto
       - logger.log: "Mode: Sleep"
     turn_off_action:
-      # OFF 눌러도 취침모드 유지 (라디오버튼)
       - switch.turn_on: erv_sleep
+
+select:
+  # ─────────────────────────────
+  # 풍량 선택 (전열/바이패스에서만 유효)
+  # ─────────────────────────────
+  - platform: template
+    name: "ERV Speed"
+    id: erv_speed
+    icon: "mdi:fan"
+    optimistic: true
+    restore_value: true
+    initial_option: "약"
+    options:
+      - "약"
+      - "중"
+      - "강"
+    on_value:
+      - if:
+          condition:
+            lambda: 'return x == "약";'
+          then:
+            - uartex.write:
+                data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
+                ack: [0x30, 0xdc]
+      - if:
+          condition:
+            lambda: 'return x == "중";'
+          then:
+            - uartex.write:
+                data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00]
+                ack: [0x30, 0xdc]
+      - if:
+          condition:
+            lambda: 'return x == "강";'
+          then:
+            - uartex.write:
+                data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00]
+                ack: [0x30, 0xdc]
