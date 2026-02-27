@@ -26,10 +26,10 @@ external_components:
     refresh: always
 
 uartex:
-  rx_timeout: 50ms
-  tx_delay: 100ms
+  rx_timeout: 150ms  # 기기 응답 속도(약 87ms)보다 넉넉하게 설정하여 데이터 누락 방지
+  tx_delay: 250ms   # 패킷 간 간격을 두어 기기 과부하 및 명령 꼬임 방지
   tx_timeout: 1000ms
-  tx_retry_cnt: 2
+  tx_retry_cnt: 1
   rx_header: [0xAA, 0x55]
   rx_footer: [0x0D, 0x0D]
   tx_header: [0xAA, 0x55]
@@ -45,7 +45,7 @@ logger:
 
 fan:
   # ─────────────────────────────────────────────
-  # 전열모드 (Heat Exchange) - 1단 시작 설정
+  # 전열모드 (Heat Exchange)
   # ─────────────────────────────────────────────
   - platform: uartex
     name: "ERV Heat Exchange"
@@ -60,7 +60,7 @@ fan:
       if (check_value(10, 0x80, data, len)) return 2;
       if (check_value(10, 0xc0, data, len)) return 3;
       return 0;
-    # 10번 바이트를 0x40으로 수정하여 1단으로 켜지게 함
+    # 11번째 바이트 0x40으로 1단 강제 시작
     command_on:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
@@ -70,16 +70,16 @@ fan:
     command_speed: !lambda |-
       int idx = (int)x;
       uint8_t speed_map[] = {0x00, 0x40, 0x80, 0xc0};
-      uint8_t spd = (idx >= 1 && idx <= 3) ? speed_map[idx] : 0x40; // 기본값 1단
+      // 잘못된 값이 들어오거나 초기화 시 1단(0x40)으로 보정
+      uint8_t spd = (idx >= 1 && idx <= 3) ? speed_map[idx] : 0x40;
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, spd, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_turn_on:
       - fan.turn_off: erv_bypass
       - switch.turn_off: erv_auto
       - switch.turn_off: erv_sleep
-      - switch.turn_off: erv_power_off
 
   # ─────────────────────────────────────────────
-  # 바이패스모드 (Bypass) - 1단 시작 설정
+  # 바이패스모드 (Bypass)
   # ─────────────────────────────────────────────
   - platform: uartex
     name: "ERV Bypass"
@@ -94,7 +94,7 @@ fan:
       if (check_value(10, 0x80, data, len)) return 2;
       if (check_value(10, 0xc0, data, len)) return 3;
       return 0;
-    # 10번 바이트를 0x40으로 수정하여 1단으로 켜지게 함
+    # 11번째 바이트 0x40으로 1단 강제 시작
     command_on:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
@@ -104,13 +104,12 @@ fan:
     command_speed: !lambda |-
       int idx = (int)x;
       uint8_t speed_map[] = {0x00, 0x40, 0x80, 0xc0};
-      uint8_t spd = (idx >= 1 && idx <= 3) ? speed_map[idx] : 0x40; // 기본값 1단
+      uint8_t spd = (idx >= 1 && idx <= 3) ? speed_map[idx] : 0x40;
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, spd, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_turn_on:
       - fan.turn_off: erv_heat
       - switch.turn_off: erv_auto
       - switch.turn_off: erv_sleep
-      - switch.turn_off: erv_power_off
 
 switch:
   - platform: uartex
@@ -128,7 +127,6 @@ switch:
       - fan.turn_off: erv_heat
       - fan.turn_off: erv_bypass
       - switch.turn_off: erv_sleep
-      - switch.turn_off: erv_power_off
 
   - platform: uartex
     name: "ERV Sleep"
@@ -145,10 +143,9 @@ switch:
       - fan.turn_off: erv_heat
       - fan.turn_off: erv_bypass
       - switch.turn_off: erv_auto
-      - switch.turn_off: erv_power_off
 
   # ─────────────────────────────────────────────
-  # 전체 종료 (Power Off) - 모든 토글 OFF
+  # 전체 종료 (Power Off) - 수동 체크섬 계산 적용
   # ─────────────────────────────────────────────
   - platform: template
     name: "ERV Power Off"
@@ -159,7 +156,7 @@ switch:
       - fan.turn_off: erv_bypass
       - switch.turn_off: erv_auto
       - switch.turn_off: erv_sleep
-      # 실제 기기에 OFF 패킷 전송
-      - uart.write: [0xAA, 0x55, 0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x39, 0x0D, 0x0D]
+      # 오프라인 월패드 신호와 충돌 방지를 위해 명확한 정지 패킷 전송
+      - uart.write: [0xAA, 0x55, 0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x35, 0x0D, 0x0D]
       - delay: 500ms
       - switch.turn_off: erv_power_off
