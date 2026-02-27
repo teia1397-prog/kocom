@@ -140,6 +140,32 @@ switch:
     turn_off_action:
       - switch.turn_on: erv_sleep
 
+
+  # ─────────────────────────────
+  # 종료 버튼 (momentary switch)
+  # 누르면 켜졌다가 1초 후 자동 OFF → 버튼처럼 동작
+  # ─────────────────────────────
+  - platform: template
+    name: "ERV Off"
+    id: erv_off
+    icon: "mdi:power"
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    turn_on_action:
+      - uartex.write:
+          data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+          ack: [0x30, 0xdc]
+      - lambda: 'id(current_mode) = 0x00;'
+      - switch.turn_off: erv_heat
+      - switch.turn_off: erv_bypass
+      - switch.turn_off: erv_auto
+      - switch.turn_off: erv_sleep
+      - logger.log: "ERV OFF"
+      - delay: 1s
+      - switch.turn_off: erv_off
+    turn_off_action:
+      - logger.log: "ERV Off reset"
+
 select:
   # ─────────────────────────────
   # 풍량 선택 (전열/바이패스에서만 유효)
@@ -183,28 +209,3 @@ select:
             - uartex.write:
                 data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00]
                 ack: [0x30, 0xdc]
-
-  # ─────────────────────────────
-  # 종료 버튼 (momentary switch)
-  # 누르면 켜졌다가 1초 후 자동 OFF → 버튼처럼 동작
-  # ─────────────────────────────
-  - platform: template
-    name: "ERV Off"
-    id: erv_off
-    icon: "mdi:power"
-    optimistic: true
-    restore_mode: ALWAYS_OFF
-    turn_on_action:
-      - uartex.write:
-          data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-          ack: [0x30, 0xdc]
-      - lambda: 'id(current_mode) = 0x00;'
-      - switch.turn_off: erv_heat
-      - switch.turn_off: erv_bypass
-      - switch.turn_off: erv_auto
-      - switch.turn_off: erv_sleep
-      - logger.log: "ERV OFF"
-      - delay: 1s
-      - switch.turn_off: erv_off
-    turn_off_action:
-      - logger.log: "ERV Off reset"
