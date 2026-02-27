@@ -61,7 +61,7 @@ switch:
   # turn_off_action: 아무것도 안 함 → 토글 OFF 불가
   # ─────────────────────────────
   - platform: template
-    name: "전열교환 운전"
+    name: "Ventilation Heat"
     id: erv_heat
     icon: "mdi:heat-wave"
     optimistic: true
@@ -85,7 +85,7 @@ switch:
   # 바이패스모드
   # ─────────────────────────────
   - platform: template
-    name: "바이패스 운전"
+    name: "Ventilation Bypass"
     id: erv_bypass
     icon: "mdi:air-filter"
     optimistic: true
@@ -108,7 +108,7 @@ switch:
   # 자동모드
   # ─────────────────────────────
   - platform: template
-    name: "자동 운전"
+    name: "Ventilation Auto"
     id: erv_auto
     icon: "mdi:refresh-auto"
     optimistic: true
@@ -128,7 +128,7 @@ switch:
   # 취침모드
   # ─────────────────────────────
   - platform: template
-    name: "취침 운전"
+    name: "Ventilation Sleep"
     id: erv_sleep
     icon: "mdi:sleep"
     optimistic: true
@@ -150,7 +150,7 @@ switch:
   # 누르면 켜졌다가 1초 후 자동 OFF → 버튼처럼 동작
   # ─────────────────────────────
   - platform: template
-    name: "전원 종료"
+    name: "Ventilation Power Off"
     id: erv_off
     icon: "mdi:power"
     optimistic: true
@@ -174,7 +174,7 @@ select:
   # 풍량 선택 (전열/바이패스에서만 유효)
   # ─────────────────────────────
   - platform: template
-    name: "풍량 설정"
+    name: "Ventilation Speed"
     id: erv_speed
     icon: "mdi:fan"
     optimistic: true
