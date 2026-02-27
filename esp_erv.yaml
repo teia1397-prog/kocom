@@ -26,22 +26,16 @@ external_components:
     refresh: always
 
 uartex:
-  rx_timeout: 50ms  # 꺼짐 현상 방지를 위해 10ms -> 50ms로 상향
+  rx_timeout: 50ms
   tx_delay: 100ms
   tx_timeout: 1000ms
-  tx_retry_cnt: 2   # 안정성을 위해 재시도 횟수 2로 상향
+  tx_retry_cnt: 2
   rx_header: [0xAA, 0x55]
   rx_footer: [0x0D, 0x0D]
   tx_header: [0xAA, 0x55]
   tx_footer: [0x0D, 0x0D]
   rx_checksum: add_no_header
   tx_checksum: add_no_header
-  version:
-    disabled: False
-  error:
-    disabled: False
-  log:
-    disabled: False
 
 logger:
   level: DEBUG
@@ -59,18 +53,13 @@ fan:
     state:
       data: [0x30, 0xdc, 0x00, 0x48, 0x00]
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
-    state_on:
-      offset: 9
-      data: [0x01]
-    state_off:
-      offset: 8
-      data: [0x00]
+    state_on: {offset: 9, data: [0x01]}
+    state_off: {offset: 8, data: [0x00]}
     state_speed: !lambda |-
       if (check_value(10, 0x40, data, len)) return 1;
       if (check_value(10, 0x80, data, len)) return 2;
       if (check_value(10, 0xc0, data, len)) return 3;
       return 0;
-    # 초기 켬 시 10번 바이트 0x40(1단)으로 설정
     command_on:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
@@ -82,14 +71,12 @@ fan:
       uint8_t speed_map[] = {0x00, 0x40, 0x80, 0xc0};
       uint8_t spd = (idx >= 1 && idx <= 3) ? speed_map[idx] : 0x40;
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, spd, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
-    command_update:
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
     update_interval: 30s
     on_turn_on:
       - fan.turn_off: erv_bypass
       - switch.turn_off: erv_auto
       - switch.turn_off: erv_sleep
+      - switch.turn_off: erv_power_off
 
   # ─────────────────────────────────────────────
   # 바이패스모드 fan
@@ -100,18 +87,13 @@ fan:
     state:
       data: [0x30, 0xdc, 0x00, 0x48, 0x00]
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
-    state_on:
-      offset: 9
-      data: [0x03]
-    state_off:
-      offset: 8
-      data: [0x00]
+    state_on: {offset: 9, data: [0x03]}
+    state_off: {offset: 8, data: [0x00]}
     state_speed: !lambda |-
       if (check_value(10, 0x40, data, len)) return 1;
       if (check_value(10, 0x80, data, len)) return 2;
       if (check_value(10, 0xc0, data, len)) return 3;
       return 0;
-    # 초기 켬 시 10번 바이트 0x40(1단)으로 설정
     command_on:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
@@ -123,18 +105,16 @@ fan:
       uint8_t speed_map[] = {0x00, 0x40, 0x80, 0xc0};
       uint8_t spd = (idx >= 1 && idx <= 3) ? speed_map[idx] : 0x40;
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, spd, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
-    command_update:
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
     update_interval: 30s
     on_turn_on:
       - fan.turn_off: erv_heat
       - switch.turn_off: erv_auto
       - switch.turn_off: erv_sleep
+      - switch.turn_off: erv_power_off
 
 switch:
   # ─────────────────────────────────────────────
-  # 자동모드
+  # 자동모드 / 취침모드
   # ─────────────────────────────────────────────
   - platform: uartex
     name: "ERV Auto"
@@ -142,45 +122,47 @@ switch:
     state:
       data: [0x30, 0xdc, 0x00, 0x48, 0x00]
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
-    state_on:
-      offset: 9
-      data: [0x02]
-    state_off:
-      offset: 8
-      data: [0x00]
+    state_on: {offset: 9, data: [0x02]}
+    state_off: {offset: 8, data: [0x00]}
     command_on:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x02, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    command_off:
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     on_turn_on:
       - fan.turn_off: erv_heat
       - fan.turn_off: erv_bypass
       - switch.turn_off: erv_sleep
+      - switch.turn_off: erv_power_off
 
-  # ─────────────────────────────────────────────
-  # 취침모드
-  # ─────────────────────────────────────────────
   - platform: uartex
     name: "ERV Sleep"
     id: erv_sleep
     state:
       data: [0x30, 0xdc, 0x00, 0x48, 0x00]
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
-    state_on:
-      offset: 9
-      data: [0x05]
-    state_off:
-      offset: 8
-      data: [0x00]
+    state_on: {offset: 9, data: [0x05]}
+    state_off: {offset: 8, data: [0x00]}
     command_on:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x05, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    command_off:
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     on_turn_on:
       - fan.turn_off: erv_heat
       - fan.turn_off: erv_bypass
       - switch.turn_off: erv_auto
+      - switch.turn_off: erv_power_off
+
+  # ─────────────────────────────────────────────
+  # 전체 종료 스위치 (Power Off)
+  # ─────────────────────────────────────────────
+  - platform: template
+    name: "ERV Power Off"
+    id: erv_power_off
+    icon: "mdi:power"
+    turn_on_action:
+      - fan.turn_off: erv_heat
+      - fan.turn_off: erv_bypass
+      - switch.turn_off: erv_auto
+      - switch.turn_off: erv_sleep
+      # 실제 기기에 OFF 명령 전송 (가장 확실한 OFF 패킷 하나만 실행)
+      - uart.write: [0xAA, 0x55, 0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x39, 0x0D, 0x0D]
+      - delay: 500ms
+      - switch.turn_off: erv_power_off # 버튼 형태 유지를 위해 스스로 꺼짐
