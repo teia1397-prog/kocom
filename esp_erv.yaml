@@ -13,7 +13,7 @@ after:
 delimiter: [0x0D, 0x0D]
 sequence:
 - lambda: |-
-         ESP_LOGI("uart_debug", "Direction: %s, Bytes: %s",
+         ESP_LOGI("uart_debug", "Direction: %s, Bytes: %s", 
            direction == uart::UART_DIRECTION_RX ? "RX" : "TX",
            format_hex_pretty(bytes).c_str());
 
@@ -49,81 +49,58 @@ logs:
 uart_debug: DEBUG
 uartex: DEBUG
 
-# ═══════════════════════════════════════════════════════
-# 구조:
-#   전열/바이패스 → uartex switch (ON/OFF만, 풍량 없음)
-#   자동/취침     → template switch
-#   풍량          → template select (약/중/강)
-#
-# 문제 원인:
-#   uartex fan의 state_speed가 RX에서 강(3)을 읽어오면
-#   ESPHome이 자동으로 command_speed(3)을 전송해서
-#   command_on의 약풍을 덮어쓰고, 슬라이더 조작시
-#   command_off가 전송되어 꺼짐
-#
-# 해결:
-#   fan 플랫폼 완전히 제거
-#   전열/바이패스를 uartex switch로
-#   풍량은 template select로 별도 제어
-# ═══════════════════════════════════════════════════════
-
-globals:
-- id: current_mode
-type: uint8_t
-restore_value: true
-    initial_value: '0x01'  # 전열
-    initial_value: '0x01'
-
-switch:
-# ─────────────────────────────
-# 전열모드
-  # turn_off_action: 아무것도 안 함 → 토글 OFF 불가
-# ─────────────────────────────
-  - platform: uartex
-  - platform: template
-name: "ERV Heat Exchange"
-id: erv_heat
-    state:
-      data: [0x30, 0xdc, 0x00, 0x48, 0x00]
-      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
-    state_on:
+fan:
+  # ─────────────────────────────────────────────
+  # 전열모드 fan
+  # ─────────────────────────────────────────────
+- platform: uartex
+    name: "ERV"
+    id: erv_fan
+    name: "ERV Heat Exchange"
+    id: erv_heat
+state:
+data: [0x30, 0xdc, 0x00, 0x48, 0x00]
+mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
+state_on:
+      offset: 8
+      data: [0x11]
       offset: 9
       data: [0x01]
-    state_off:
-      offset: 8
-      data: [0x00]
-    command_on:
+state_off:
+offset: 8
+data: [0x00]
+state_speed: !lambda |-
+     if (check_value(10, 0x40, data, len)) return 1;
+     if (check_value(10, 0x80, data, len)) return 2;
+     if (check_value(10, 0xc0, data, len)) return 3;
+     return 0;
+   command_on:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    command_off:
-      # OFF 눌러도 전열 약풍 유지
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
+      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00]
+ack: [0x30, 0xdc]
+command_off:
+data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+ack: [0x30, 0xdc]
+command_speed: !lambda |-
+     int idx = (int)x;
+     uint8_t speed_map[] = {0x00, 0x40, 0x80, 0xc0};
+      uint8_t spd = (idx >= 1 && idx <= 3) ? speed_map[idx] : 0x40;
+      uint8_t spd = (idx >= 1 && idx <= 3) ? speed_map[idx] : 0x80;
+     return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, spd, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
+   command_update:
+data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+ack: [0x30, 0xdc]
+update_interval: 30s
     on_turn_on:
-    optimistic: true
-    turn_on_action:
-- lambda: 'id(current_mode) = 0x01;'
-      - uartex.write:
-          data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
-          ack: [0x30, 0xdc]
-- switch.turn_off: erv_bypass
-- switch.turn_off: erv_auto
-- switch.turn_off: erv_sleep
-- select.set:
-id: erv_speed
-option: "약"
-      - logger.log: "Mode: Heat Exchange"
-    turn_off_action:
-      # 이미 켜진 스위치는 OFF 안 됨 (종료버튼으로만 끄기)
-      - switch.turn_on: erv_heat
+      # 전열 켜지면 바이패스 UI만 OFF로 내리기 (실제 패킷 없음)
+      - fan.turn_off: erv_bypass
 
-# ─────────────────────────────
-# 바이패스모드
-# ─────────────────────────────
+  # ─────────────────────────────────────────────
+  # 바이패스모드 fan
+  # ─────────────────────────────────────────────
   - platform: uartex
-  - platform: template
-name: "ERV Bypass"
-id: erv_bypass
+    name: "ERV Bypass"
+    id: erv_bypass
     state:
       data: [0x30, 0xdc, 0x00, 0x48, 0x00]
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
@@ -133,150 +110,105 @@ id: erv_bypass
     state_off:
       offset: 8
       data: [0x00]
+    state_speed: !lambda |-
+      if (check_value(10, 0x40, data, len)) return 1;
+      if (check_value(10, 0x80, data, len)) return 2;
+      if (check_value(10, 0xc0, data, len)) return 3;
+      return 0;
     command_on:
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
+      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     command_off:
-      # OFF 눌러도 바이패스 약풍 유지
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
+      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
+    command_speed: !lambda |-
+      int idx = (int)x;
+      uint8_t speed_map[] = {0x00, 0x40, 0x80, 0xc0};
+      uint8_t spd = (idx >= 1 && idx <= 3) ? speed_map[idx] : 0x80;
+      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, spd, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
+    command_update:
+      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+      ack: [0x30, 0xdc]
+    update_interval: 30s
     on_turn_on:
-    optimistic: true
-    turn_on_action:
-- lambda: 'id(current_mode) = 0x03;'
-      - uartex.write:
-          data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
-          ack: [0x30, 0xdc]
-- switch.turn_off: erv_heat
-- switch.turn_off: erv_auto
-- switch.turn_off: erv_sleep
-- select.set:
-id: erv_speed
-option: "약"
-      - logger.log: "Mode: Bypass"
-    turn_off_action:
-      - switch.turn_on: erv_bypass
-
-# ─────────────────────────────
-# 자동모드
-# ─────────────────────────────
-- platform: template
-name: "ERV Auto"
-id: erv_auto
-optimistic: true
-turn_on_action:
-- lambda: 'id(current_mode) = 0x02;'
-- uartex.write:
-data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x02, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
-ack: [0x30, 0xdc]
-- switch.turn_off: erv_heat
-- switch.turn_off: erv_bypass
-- switch.turn_off: erv_sleep
-- logger.log: "Mode: Auto"
-turn_off_action:
-- switch.turn_on: erv_auto
-
-# ─────────────────────────────
-# 취침모드
-# ─────────────────────────────
-- platform: template
-name: "ERV Sleep"
-id: erv_sleep
-optimistic: true
-turn_on_action:
-- lambda: 'id(current_mode) = 0x05;'
-- uartex.write:
-data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x05, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
-ack: [0x30, 0xdc]
-- switch.turn_off: erv_heat
-- switch.turn_off: erv_bypass
-- switch.turn_off: erv_auto
-- logger.log: "Mode: Sleep"
-turn_off_action:
-- switch.turn_on: erv_sleep
-
-  # ─────────────────────────────
-  # 종료 (momentary 방식 - 0.5초 후 자동 OFF)
-  # HA에서 버튼처럼 보이고, 누르면 즉시 ERV 전원 OFF
-  # ─────────────────────────────
-  - platform: template
-    name: "ERV Off"
-    id: erv_off
-    icon: "mdi:power"
-    optimistic: true
-    turn_on_action:
-      - uartex.write:
-          data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-          ack: [0x30, 0xdc]
-      - lambda: 'id(current_mode) = 0x00;'
-      - switch.turn_off: erv_heat
-      - switch.turn_off: erv_bypass
-      - switch.turn_off: erv_auto
-      - switch.turn_off: erv_sleep
-      - logger.log: "ERV OFF"
-      - delay: 500ms
-      # 0.5초 후 자동으로 OFF 상태로 복귀 (버튼처럼 동작)
-      - switch.turn_off: erv_off
-    turn_off_action:
-      - logger.log: "ERV Off switch reset"
+      # 바이패스 켜지면 전열 UI만 OFF로 내리기 (실제 패킷 없음)
+      - fan.turn_off: erv_heat
 
 select:
-# ─────────────────────────────
-# 풍량 선택 (전열/바이패스에서만 유효)
-# ─────────────────────────────
-- platform: template
-name: "ERV Speed"
-id: erv_speed
-icon: "mdi:fan"
-optimistic: true
-restore_value: true
-initial_option: "약"
-options:
-- "약"
-- "중"
-- "강"
-on_value:
-- if:
-condition:
-            lambda: 'return x == "약";'
-            # 자동/취침/꺼짐 상태면 무시
-            lambda: 'return id(current_mode) == 0x02 || id(current_mode) == 0x05 || id(current_mode) == 0x00;'
-          then:
-            - logger.log: "Speed ignored (auto/sleep/off)"
+  - platform: template
+    name: "ERV Mode"
+    id: erv_mode
+    icon: "mdi:air-filter"
+    optimistic: true
+    restore_value: true
+    initial_option: "바이패스"
+    options:
+      - "바이패스"
+      - "자동"
+      - "취침"
+    on_value:
       - if:
           condition:
-            lambda: 'return x == "약" && id(current_mode) != 0x02 && id(current_mode) != 0x05 && id(current_mode) != 0x00;'
-then:
-- uartex.write:
-data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
-ack: [0x30, 0xdc]
-- if:
-condition:
-            lambda: 'return x == "중";'
-            lambda: 'return x == "중" && id(current_mode) != 0x02 && id(current_mode) != 0x05 && id(current_mode) != 0x00;'
-then:
-- uartex.write:
-data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00]
-ack: [0x30, 0xdc]
-- if:
-condition:
-            lambda: 'return x == "강";'
-            lambda: 'return x == "강" && id(current_mode) != 0x02 && id(current_mode) != 0x05 && id(current_mode) != 0x00;'
-then:
-- uartex.write:
-data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00]
-ack: [0x30, 0xdc]
+            lambda: 'return x == "바이패스";'
+          then:
+            - uartex.write:
+                data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00]
+                ack: [0x30, 0xdc]
+            - logger.log: "Mode: 바이패스"
+      - if:
+          condition:
+            lambda: 'return x == "자동";'
+          then:
+            - uartex.write:
+                data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x02, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
+                ack: [0x30, 0xdc]
+            - logger.log: "Mode: 자동"
+      - if:
+          condition:
+            lambda: 'return x == "취침";'
+          then:
+            - uartex.write:
+                data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x05, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
+                ack: [0x30, 0xdc]
+            - logger.log: "Mode: 취침"
+switch:
+  # ─────────────────────────────────────────────
+  # 자동모드 / 취침모드 (풍량 없음)
+  # ─────────────────────────────────────────────
+  - platform: uartex
+    name: "ERV Auto"
+    id: erv_auto
+    state:
+      data: [0x30, 0xdc, 0x00, 0x48, 0x00]
+      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
+    state_on:
+      offset: 9
+      data: [0x02]
+    state_off:
+      offset: 8
+      data: [0x00]
+    command_on:
+      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x02, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
+      ack: [0x30, 0xdc]
+    command_off:
+      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+      ack: [0x30, 0xdc]
 
-button:
-  - platform: template
-    name: "ERV Off"
-    icon: "mdi:power"
-    on_press:
-      - uartex.write:
-          data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-          ack: [0x30, 0xdc]
-      - switch.turn_off: erv_heat
-      - switch.turn_off: erv_bypass
-      - switch.turn_off: erv_auto
-      - switch.turn_off: erv_sleep
-      - logger.log: "ERV OFF"
+  - platform: uartex
+    name: "ERV Sleep"
+    id: erv_sleep
+    state:
+      data: [0x30, 0xdc, 0x00, 0x48, 0x00]
+      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
+    state_on:
+      offset: 9
+      data: [0x05]
+    state_off:
+      offset: 8
+      data: [0x00]
+    command_on:
+      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x05, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
+      ack: [0x30, 0xdc]
+    command_off:
+      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+      ack: [0x30, 0xdc]
