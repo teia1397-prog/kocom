@@ -49,48 +49,26 @@ logger:
     uart_debug: DEBUG
     uartex: DEBUG
 
-fan:
-  - platform: uartex
-    name: "ERV"
-    id: erv_fan
-    state:
-      data: [0x30, 0xdc, 0x00, 0x48, 0x00]
-      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
-    state_on:
-      offset: 8
-      data: [0x11]
-    state_off:
-      offset: 8
-      data: [0x00]
-    state_speed: !lambda |-
-      if (check_value(10, 0x40, data, len)) return 1;
-      if (check_value(10, 0x80, data, len)) return 2;
-      if (check_value(10, 0xc0, data, len)) return 3;
-      return 0;
-    command_on:
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    command_off:
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    command_speed: !lambda |-
-      int idx = (int)x;
-      uint8_t speed_map[] = {0x00, 0x40, 0x80, 0xc0};
-      uint8_t spd = (idx >= 1 && idx <= 3) ? speed_map[idx] : 0x40;
-      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, spd, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
-    command_update:
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    update_interval: 30s
+# ─────────────────────────────────────────────
+# HA 대시보드 카드 구성 (참고):
+# type: entities
+# title: 전열교환기
+# entities:
+#   - entity: select.erv_mode    ← 끄기/전열/바이패스/자동/취침
+#   - entity: select.erv_speed   ← 약/중/강
+# ─────────────────────────────────────────────
 
 select:
+  # ─────────────────────────────────────────────
+  # 모드 선택
+  # ─────────────────────────────────────────────
   - platform: template
     name: "ERV Mode"
     id: erv_mode
     icon: "mdi:air-filter"
     optimistic: true
     restore_value: true
-    initial_option: "전열"
+    initial_option: "끄기"
     options:
       - "끄기"
       - "전열"
@@ -105,7 +83,7 @@ select:
             - uartex.write:
                 data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
                 ack: [0x30, 0xdc]
-            - logger.log: "OFF"
+            - logger.log: "ERV OFF"
       - if:
           condition:
             lambda: 'return x == "전열";'
@@ -138,3 +116,58 @@ select:
                 data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x05, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
                 ack: [0x30, 0xdc]
             - logger.log: "Mode: 취침"
+
+  # ─────────────────────────────────────────────
+  # 풍량 선택
+  # 모드가 자동/취침/끄기일 때는 전열(0x01)로 전송
+  # ─────────────────────────────────────────────
+  - platform: template
+    name: "ERV Speed"
+    id: erv_speed
+    icon: "mdi:fan"
+    optimistic: true
+    restore_value: true
+    initial_option: "중"
+    options:
+      - "약"
+      - "중"
+      - "강"
+    on_value:
+      # 자동/취침/끄기 모드에서는 풍량 변경 무시
+      - if:
+          condition:
+            lambda: |-
+              auto mode = id(erv_mode).state;
+              return (mode == "끄기" || mode == "자동" || mode == "취침");
+          then:
+            - logger.log: "Speed change ignored (auto/sleep/off mode)"
+      - if:
+          condition:
+            lambda: |-
+              auto mode = id(erv_mode).state;
+              return x == "약" && mode != "끄기" && mode != "자동" && mode != "취침";
+          then:
+            - uartex.write:
+                data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
+                ack: [0x30, 0xdc]
+            - logger.log: "Speed: 약"
+      - if:
+          condition:
+            lambda: |-
+              auto mode = id(erv_mode).state;
+              return x == "중" && mode != "끄기" && mode != "자동" && mode != "취침";
+          then:
+            - uartex.write:
+                data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00]
+                ack: [0x30, 0xdc]
+            - logger.log: "Speed: 중"
+      - if:
+          condition:
+            lambda: |-
+              auto mode = id(erv_mode).state;
+              return x == "강" && mode != "끄기" && mode != "자동" && mode != "취침";
+          then:
+            - uartex.write:
+                data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00]
+                ack: [0x30, 0xdc]
+            - logger.log: "Speed: 강"
