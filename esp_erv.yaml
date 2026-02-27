@@ -47,7 +47,9 @@ logger:
     uartex: DEBUG
 
 switch:
-  # 거실 전체 환풍기 (Room 0) - 0x48 디바이스 사용
+  # ──────────────────────────────────────────────
+  # 기존 스위치 (거실 전체 환풍기 - 0x48 디바이스)
+  # ──────────────────────────────────────────────
   - platform: uartex
     name: "Living Room Ventilation"
     id: living_room_ventilation
@@ -70,3 +72,97 @@ switch:
       - logger.log: "거실 전체 환풍기 켜짐 (0x48 디바이스)"
     on_turn_off:
       - logger.log: "거실 전체 환풍기 꺼짐 (0x48 디바이스)"
+
+  # ──────────────────────────────────────────────────────────────────────
+  # [코콤 월패드] 전열교환기 ON/OFF (환기 디바이스 0x32)
+  # 코콤 월패드 프로토콜: AA55 + 30BC + DEVICE(0x0032) + ROOM + CMD + VALUE
+  # 출처: mscg.kr/65 (커뮤니티 역분석 데이터)
+  # ⚠️ 본인 아파트에서 실제 캡처한 패킷과 대조 후 사용하세요
+  # ──────────────────────────────────────────────────────────────────────
+  - platform: uartex
+    name: "코콤 전열교환기 (Kocom ERV)"
+    id: kocom_erv
+    state:
+      data: [0x30, 0xdc, 0x00, 0x32, 0x00]
+      mask: [0xff, 0xff, 0xff, 0xff, 0xff]
+    state_on:
+      offset: 8
+      data: [0x11]
+    state_off:
+      offset: 8
+      data: [0x00]
+    command_on:
+      # 조명 디바이스(0x0E)와 동일한 구조, 환기 디바이스 0x32
+      # VALUE: 전원ON=0x11, 풍량2단 (수동2단)
+      data: [0x30, 0xbc, 0x00, 0x32, 0x00, 0x01, 0x00, 0x00, 0x11, 0x02, 0x02, 0x02, 0x00, 0x01, 0x00, 0x00]
+      ack: [0x30, 0xdc]
+    command_off:
+      data: [0x30, 0xbc, 0x00, 0x32, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+      ack: [0x30, 0xdc]
+    on_turn_on:
+      - logger.log: "코콤 전열교환기 켜짐"
+    on_turn_off:
+      - logger.log: "코콤 전열교환기 꺼짐"
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # [그렉스(Grex) 전열교환기] 수동 2단 ON / 정지 OFF
+  # 그렉스는 헤더/푸터 구조가 다름 → 별도 uartex 인스턴스가 필요할 수 있음
+  # 아래는 그렉스 독립 통신용 raw 패킷 (AA55 헤더 없음, D0으로 시작)
+  # ⚠️ 그렉스는 코콤 월패드와 별도 RS485 버스를 사용하는 경우가 많습니다
+  # ⚠️ 동일 버스에 연결된 경우에만 아래 설정이 동작합니다
+  # 출처: mscg.kr/65 (커뮤니티 역분석)
+  # ────────────────────────────────────────────────────────────────────────────
+  - platform: uartex
+    name: "그렉스 전열교환기 수동2단 (Grex ERV)"
+    id: grex_erv
+    state:
+      data: [0xD0, 0x8A, 0xE0, 0x22]
+      mask: [0xff, 0xff, 0xff, 0xff]
+    state_on:
+      offset: 4
+      data: [0x02]   # 일반모드 수동2단
+    state_off:
+      offset: 4
+      data: [0x00]   # 정지
+    command_on:
+      # 일반모드 수동2단: D0 8A E0 22 02 00 02 02 00 01 93
+      data: [0xD0, 0x8A, 0xE0, 0x22, 0x02, 0x00, 0x02, 0x02, 0x00, 0x01, 0x93]
+      ack: [0xD0, 0x8A]
+    command_off:
+      # 정지: D0 8A E0 22 00 00 00 00 00 00 8C
+      data: [0xD0, 0x8A, 0xE0, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x8C]
+      ack: [0xD0, 0x8A]
+    on_turn_on:
+      - logger.log: "그렉스 전열교환기 켜짐 (수동 2단)"
+    on_turn_off:
+      - logger.log: "그렉스 전열교환기 꺼짐 (정지)"
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # [나비엔(Navien) 전열교환기] 
+  # ⚠️ 나비엔 월패드 환기 패킷은 공개 데이터가 매우 적습니다
+  # 아래는 나비엔 월패드 RS485 역분석 커뮤니티 데이터 기반 추정값입니다
+  # 반드시 실제 패킷 캡처(EW11 등) 후 수정하여 사용하세요
+  # 출처: cafe.naver.com/koreassistant 나비엔 월패드 스레드
+  # ──────────────────────────────────────────────────────────────────────────────
+  - platform: uartex
+    name: "나비엔 전열교환기 (Navien ERV)"
+    id: navien_erv
+    state:
+      data: [0x30, 0xdc, 0x00, 0x48, 0x01]  # 나비엔: 환기 디바이스 추정 0x48 subtype 0x01
+      mask: [0xff, 0xff, 0xff, 0xff, 0xff]
+    state_on:
+      offset: 10
+      data: [0x01]
+    state_off:
+      offset: 10
+      data: [0x00]
+    command_on:
+      data: [0x30, 0xbc, 0x00, 0x48, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00]
+      ack: [0x30, 0xdc]
+    command_off:
+      data: [0x30, 0xbc, 0x00, 0x48, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+      ack: [0x30, 0xdc]
+    on_turn_on:
+      - logger.log: "나비엔 전열교환기 켜짐 (패킷 캡처 후 검증 필요)"
+    on_turn_off:
+      - logger.log: "나비엔 전열교환기 꺼짐 (패킷 캡처 후 검증 필요)"
