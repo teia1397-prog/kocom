@@ -49,92 +49,58 @@ logger:
     uart_debug: DEBUG
     uartex: DEBUG
 
-# ═══════════════════════════════════════════════════════
-# 구조:
-#   전열/바이패스 → uartex switch (ON/OFF만, 풍량 없음)
-#   자동/취침     → template switch
-#   풍량          → template select (약/중/강)
-#
-# 문제 원인:
-#   uartex fan의 state_speed가 RX에서 강(3)을 읽어오면
-#   ESPHome이 자동으로 command_speed(3)을 전송해서
-#   command_on의 약풍을 덮어쓰고, 슬라이더 조작시
-#   command_off가 전송되어 꺼짐
-#
-# 해결:
-#   fan 플랫폼 완전히 제거
-#   전열/바이패스를 uartex switch로
-#   풍량은 template select로 별도 제어
-# ═══════════════════════════════════════════════════════
-
 globals:
   - id: current_mode
     type: uint8_t
     restore_value: true
-    initial_value: '0x01'  # 전열
+    initial_value: '0x01'
 
 switch:
   # ─────────────────────────────
   # 전열모드
+  # turn_off_action: 아무것도 안 함 → 토글 OFF 불가
   # ─────────────────────────────
-  - platform: uartex
+  - platform: template
     name: "ERV Heat Exchange"
     id: erv_heat
-    state:
-      data: [0x30, 0xdc, 0x00, 0x48, 0x00]
-      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
-    state_on:
-      offset: 9
-      data: [0x01]
-    state_off:
-      offset: 8
-      data: [0x00]
-    command_on:
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    command_off:
-      # OFF 눌러도 전열 약풍 유지
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    on_turn_on:
+    optimistic: true
+    turn_on_action:
       - lambda: 'id(current_mode) = 0x01;'
+      - uartex.write:
+          data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
+          ack: [0x30, 0xdc]
       - switch.turn_off: erv_bypass
       - switch.turn_off: erv_auto
       - switch.turn_off: erv_sleep
       - select.set:
           id: erv_speed
           option: "약"
+      - logger.log: "Mode: Heat Exchange"
+    turn_off_action:
+      # 이미 켜진 스위치는 OFF 안 됨 (종료버튼으로만 끄기)
+      - switch.turn_on: erv_heat
 
   # ─────────────────────────────
   # 바이패스모드
   # ─────────────────────────────
-  - platform: uartex
+  - platform: template
     name: "ERV Bypass"
     id: erv_bypass
-    state:
-      data: [0x30, 0xdc, 0x00, 0x48, 0x00]
-      mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
-    state_on:
-      offset: 9
-      data: [0x03]
-    state_off:
-      offset: 8
-      data: [0x00]
-    command_on:
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    command_off:
-      # OFF 눌러도 바이패스 약풍 유지
-      data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
-      ack: [0x30, 0xdc]
-    on_turn_on:
+    optimistic: true
+    turn_on_action:
       - lambda: 'id(current_mode) = 0x03;'
+      - uartex.write:
+          data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
+          ack: [0x30, 0xdc]
       - switch.turn_off: erv_heat
       - switch.turn_off: erv_auto
       - switch.turn_off: erv_sleep
       - select.set:
           id: erv_speed
           option: "약"
+      - logger.log: "Mode: Bypass"
+    turn_off_action:
+      - switch.turn_on: erv_bypass
 
   # ─────────────────────────────
   # 자동모드
@@ -174,6 +140,31 @@ switch:
     turn_off_action:
       - switch.turn_on: erv_sleep
 
+  # ─────────────────────────────
+  # 종료 (momentary 방식 - 0.5초 후 자동 OFF)
+  # HA에서 버튼처럼 보이고, 누르면 즉시 ERV 전원 OFF
+  # ─────────────────────────────
+  - platform: template
+    name: "ERV Off"
+    id: erv_off
+    icon: "mdi:power"
+    optimistic: true
+    turn_on_action:
+      - uartex.write:
+          data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+          ack: [0x30, 0xdc]
+      - lambda: 'id(current_mode) = 0x00;'
+      - switch.turn_off: erv_heat
+      - switch.turn_off: erv_bypass
+      - switch.turn_off: erv_auto
+      - switch.turn_off: erv_sleep
+      - logger.log: "ERV OFF"
+      - delay: 500ms
+      # 0.5초 후 자동으로 OFF 상태로 복귀 (버튼처럼 동작)
+      - switch.turn_off: erv_off
+    turn_off_action:
+      - logger.log: "ERV Off switch reset"
+
 select:
   # ─────────────────────────────
   # 풍량 선택 (전열/바이패스에서만 유효)
@@ -192,36 +183,28 @@ select:
     on_value:
       - if:
           condition:
-            lambda: 'return x == "약";'
+            # 자동/취침/꺼짐 상태면 무시
+            lambda: 'return id(current_mode) == 0x02 || id(current_mode) == 0x05 || id(current_mode) == 0x00;'
+          then:
+            - logger.log: "Speed ignored (auto/sleep/off)"
+      - if:
+          condition:
+            lambda: 'return x == "약" && id(current_mode) != 0x02 && id(current_mode) != 0x05 && id(current_mode) != 0x00;'
           then:
             - uartex.write:
                 data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
                 ack: [0x30, 0xdc]
       - if:
           condition:
-            lambda: 'return x == "중";'
+            lambda: 'return x == "중" && id(current_mode) != 0x02 && id(current_mode) != 0x05 && id(current_mode) != 0x00;'
           then:
             - uartex.write:
                 data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00]
                 ack: [0x30, 0xdc]
       - if:
           condition:
-            lambda: 'return x == "강";'
+            lambda: 'return x == "강" && id(current_mode) != 0x02 && id(current_mode) != 0x05 && id(current_mode) != 0x00;'
           then:
             - uartex.write:
                 data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00]
                 ack: [0x30, 0xdc]
-
-button:
-  - platform: template
-    name: "ERV Off"
-    icon: "mdi:power"
-    on_press:
-      - uartex.write:
-          data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-          ack: [0x30, 0xdc]
-      - switch.turn_off: erv_heat
-      - switch.turn_off: erv_bypass
-      - switch.turn_off: erv_auto
-      - switch.turn_off: erv_sleep
-      - logger.log: "ERV OFF"
