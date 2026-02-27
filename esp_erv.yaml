@@ -50,8 +50,8 @@ logger:
     uartex: DEBUG
 
   - platform: uartex
-    name: "Living Room Ventilation"
-    id: living_room_ventilation
+    name: "Living Room V entilation"
+    id: living_room_v_entilation
     state:
       data: [0x30, 0xdc, 0x00, 0x48, 0x00]
       mask: [0xff, 0xf0, 0xff, 0xff, 0xff]
