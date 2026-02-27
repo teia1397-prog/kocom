@@ -87,13 +87,13 @@ fan:
       if (check_value(10, 0xc0, data, len)) return 3;
       return 0;
     command_on: !lambda |-
-      uint8_t mode = id(current_mode).state;
+      uint8_t mode = id(current_mode);
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, mode, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_off:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     command_speed: !lambda |-
-      uint8_t mode = id(current_mode).state;
+      uint8_t mode = id(current_mode);
       int idx = (int)x;
       uint8_t speed_map[] = {0x00, 0x40, 0x80, 0xc0};
       uint8_t spd = (idx >= 1 && idx <= 3) ? speed_map[idx] : 0x40;
@@ -129,7 +129,7 @@ select:
             condition:
               lambda: 'return x == "끄기";'
             then:
-              - lambda: 'id(current_mode).state = 0x01;'
+              - lambda: 'id(current_mode) = 0x01;'
               - uartex.write:
                   data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
                   ack: [0x30, 0xdc]
@@ -138,7 +138,7 @@ select:
             condition:
               lambda: 'return x == "전열";'
             then:
-              - lambda: 'id(current_mode).state = 0x01;'
+              - lambda: 'id(current_mode) = 0x01;'
               - uartex.write:
                   data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
                   ack: [0x30, 0xdc]
@@ -147,7 +147,7 @@ select:
             condition:
               lambda: 'return x == "바이패스";'
             then:
-              - lambda: 'id(current_mode).state = 0x03;'
+              - lambda: 'id(current_mode) = 0x03;'
               - uartex.write:
                   data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
                   ack: [0x30, 0xdc]
@@ -156,7 +156,7 @@ select:
             condition:
               lambda: 'return x == "자동";'
             then:
-              - lambda: 'id(current_mode).state = 0x02;'
+              - lambda: 'id(current_mode) = 0x02;'
               - uartex.write:
                   data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x02, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
                   ack: [0x30, 0xdc]
@@ -165,7 +165,7 @@ select:
             condition:
               lambda: 'return x == "취침";'
             then:
-              - lambda: 'id(current_mode).state = 0x05;'
+              - lambda: 'id(current_mode) = 0x05;'
               - uartex.write:
                   data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x05, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
                   ack: [0x30, 0xdc]
