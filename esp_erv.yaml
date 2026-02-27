@@ -64,6 +64,7 @@ switch:
     name: "Ventilation Heat"
     id: vent_heat
     icon: "mdi:heat-wave"
+    unique_id: "esp_erv_heat_2024"
     optimistic: true
     turn_on_action:
       - lambda: 'id(vent_mode) = 0x01;'
@@ -88,6 +89,7 @@ switch:
     name: "Ventilation Bypass"
     id: vent_bypass
     icon: "mdi:air-filter"
+    unique_id: "esp_erv_bypass_2024"
     optimistic: true
     turn_on_action:
       - lambda: 'id(vent_mode) = 0x03;'
@@ -111,6 +113,7 @@ switch:
     name: "Ventilation Auto"
     id: vent_auto
     icon: "mdi:refresh-auto"
+    unique_id: "esp_erv_auto_2024"
     optimistic: true
     turn_on_action:
       - lambda: 'id(vent_mode) = 0x02;'
@@ -131,6 +134,7 @@ switch:
     name: "Ventilation Sleep"
     id: vent_sleep
     icon: "mdi:sleep"
+    unique_id: "esp_erv_sleep_2024"
     optimistic: true
     turn_on_action:
       - lambda: 'id(vent_mode) = 0x05;'
@@ -153,6 +157,7 @@ switch:
     name: "Ventilation Power Off"
     id: vent_off
     icon: "mdi:power"
+    unique_id: "esp_erv_off_2024"
     optimistic: true
     turn_on_action:
       - uartex.write:
