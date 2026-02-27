@@ -63,6 +63,7 @@ switch:
   - platform: template
     name: "ERV Heat Exchange"
     id: erv_heat
+    icon: "mdi:heat-wave"
     optimistic: true
     turn_on_action:
       - lambda: 'id(current_mode) = 0x01;'
@@ -86,6 +87,7 @@ switch:
   - platform: template
     name: "ERV Bypass"
     id: erv_bypass
+    icon: "mdi:air-filter"
     optimistic: true
     turn_on_action:
       - lambda: 'id(current_mode) = 0x03;'
@@ -108,6 +110,7 @@ switch:
   - platform: template
     name: "ERV Auto"
     id: erv_auto
+    icon: "mdi:refresh-auto"
     optimistic: true
     turn_on_action:
       - lambda: 'id(current_mode) = 0x02;'
@@ -127,6 +130,7 @@ switch:
   - platform: template
     name: "ERV Sleep"
     id: erv_sleep
+    icon: "mdi:sleep"
     optimistic: true
     turn_on_action:
       - lambda: 'id(current_mode) = 0x05;'
