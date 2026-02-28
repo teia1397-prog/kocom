@@ -208,11 +208,10 @@ switch:
             - repeat:
                 count: 5
                 then:
-                  - uart.write: [0xAA, 0x55, 0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x35, 0x0D, 0x0D]
+                  # kocom.py 기준 종료: value = 0000(off) + 40(1단속도유지) + 0000000000
+                  # AA55 30BC 0048 0001 0000 0000 4000 0000 0000 [chk] 0D0D
+                  - uart.write: [0xAA, 0x55, 0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x75, 0x0D, 0x0D]
                   - delay: 100ms
-            # fan.turn_off / switch.turn_off 호출 금지
-            # → uartex command_off 패킷이 발송되어 ERV가 다시 켜짐
-            # uartex가 RX로 꺼진 상태를 수신하면 자동으로 상태 업데이트됨
             - lambda: 'id(erv_is_running) = false;'
           else:
             - logger.log: "ERV already off, skip"
