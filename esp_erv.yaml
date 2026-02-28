@@ -65,6 +65,15 @@ globals:
     type: int
     restore_value: false
     initial_value: '0'
+  - id: erv_timer_hours
+    type: int
+    restore_value: false
+    initial_value: '0'
+  # ERV 실제 동작 상태 직접 추적 (uartex fan.is_on 신뢰 불가)
+  - id: erv_is_running
+    type: bool
+    restore_value: false
+    initial_value: 'false'
 
 binary_sensor:
   - platform: template
@@ -106,19 +115,15 @@ select:
     optimistic: true
     set_action:
       - lambda: |-
-          if (x == "끄기")        { id(erv_timer_remaining) = 0; }
-          else if (x == "1시간")  { id(erv_timer_remaining) = 3600; }
-          else if (x == "2시간")  { id(erv_timer_remaining) = 7200; }
-          else if (x == "3시간")  { id(erv_timer_remaining) = 10800; }
-          else if (x == "4시간")  { id(erv_timer_remaining) = 14400; }
-          else if (x == "5시간")  { id(erv_timer_remaining) = 18000; }
-          else if (x == "6시간")  { id(erv_timer_remaining) = 21600; }
-          else if (x == "7시간")  { id(erv_timer_remaining) = 25200; }
-          else if (x == "8시간")  { id(erv_timer_remaining) = 28800; }
-          else if (x == "9시간")  { id(erv_timer_remaining) = 32400; }
-          else if (x == "10시간") { id(erv_timer_remaining) = 36000; }
-          else if (x == "11시간") { id(erv_timer_remaining) = 39600; }
-          else if (x == "12시간") { id(erv_timer_remaining) = 43200; }
+          // 인덱스 기반으로 비교 (UTF-8 한글 문자열 비교 오류 회피)
+          int idx = 0;
+          auto opts = id(erv_timer_select).traits.get_options();
+          for (int i = 0; i < (int)opts.size(); i++) {
+            if (opts[i] == x) { idx = i; break; }
+          }
+          id(erv_timer_hours) = idx;
+          id(erv_timer_remaining) = idx * 3600;
+          ESP_LOGI("erv_timer", "Timer set: idx=%d, remaining=%d sec", idx, idx * 3600);
 
 interval:
   - interval: 1s
@@ -169,9 +174,14 @@ fan:
       else if (x == 3) spd = 0xc0;
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, spd, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_turn_on:
+      - lambda: 'id(erv_is_running) = true;'
       - switch.turn_off: erv_auto
       - switch.turn_off: erv_sleep
       - fan.turn_off: erv_bypass
+    on_turn_off:
+      - lambda: |-
+          if (!id(erv_bypass).state && !id(erv_auto).state && !id(erv_sleep).state)
+            id(erv_is_running) = false;
 
   - platform: uartex
     name: "ERV Bypass"
@@ -199,9 +209,14 @@ fan:
       else if (x == 3) spd = 0xc0;
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, spd, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_turn_on:
+      - lambda: 'id(erv_is_running) = true;'
       - switch.turn_off: erv_auto
       - switch.turn_off: erv_sleep
       - fan.turn_off: erv_heat
+    on_turn_off:
+      - lambda: |-
+          if (!id(erv_heat).state && !id(erv_auto).state && !id(erv_sleep).state)
+            id(erv_is_running) = false;
 
 switch:
   - platform: uartex
@@ -219,9 +234,14 @@ switch:
       if (id(airpurifier_linked).state) return {};
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x02, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_turn_on:
+      - lambda: 'id(erv_is_running) = true;'
       - fan.turn_off: erv_heat
       - fan.turn_off: erv_bypass
       - switch.turn_off: erv_sleep
+    on_turn_off:
+      - lambda: |-
+          if (!id(erv_heat).state && !id(erv_bypass).state && !id(erv_sleep).state)
+            id(erv_is_running) = false;
 
   - platform: uartex
     name: "ERV Sleep"
@@ -238,9 +258,14 @@ switch:
       if (id(airpurifier_linked).state) return {};
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x05, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_turn_on:
+      - lambda: 'id(erv_is_running) = true;'
       - fan.turn_off: erv_heat
       - fan.turn_off: erv_bypass
       - switch.turn_off: erv_auto
+    on_turn_off:
+      - lambda: |-
+          if (!id(erv_heat).state && !id(erv_bypass).state && !id(erv_auto).state)
+            id(erv_is_running) = false;
 
   - platform: template
     name: "ERV Force Stop"
@@ -252,17 +277,14 @@ switch:
     turn_on_action:
       - if:
           condition:
-            or:
-              - fan.is_on: erv_heat
-              - fan.is_on: erv_bypass
-              - switch.is_on: erv_auto
-              - switch.is_on: erv_sleep
+            lambda: 'return id(erv_is_running);'
           then:
             - repeat:
                 count: 5
                 then:
                   - uart.write: [0xAA, 0x55, 0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x35, 0x0D, 0x0D]
                   - delay: 100ms
+            - lambda: 'id(erv_is_running) = false;'
             - fan.turn_off: erv_heat
             - fan.turn_off: erv_bypass
             - switch.turn_off: erv_auto
