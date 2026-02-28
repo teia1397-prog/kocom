@@ -163,4 +163,4 @@ switch:
       - delay: 1s
       - switch.turn_off: erv_power_off
     turn_off_action:
-      - switch.turn_on: erv_power_off
+      - logger.log: "ERV Force Stop reset"
