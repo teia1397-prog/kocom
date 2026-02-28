@@ -66,6 +66,7 @@ binary_sensor:
     id: airpurifier_linked
     device_class: running
 
+
 fan:
   - platform: uartex
     name: "ERV Heat Exchange"
@@ -92,9 +93,15 @@ fan:
       else if (x == 3) spd = 0xc0;
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, spd, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_turn_on:
-      - switch.turn_off: erv_auto
-      - switch.turn_off: erv_sleep
-      - fan.turn_off: erv_bypass
+      - if:
+          condition:
+            lambda: 'return id(airpurifier_linked).state;'
+          then:
+            - logger.log: "ERV 제어 차단: 공기청정기 연동 중"
+          else:
+            - switch.turn_off: erv_auto
+            - switch.turn_off: erv_sleep
+            - fan.turn_off: erv_bypass
 
   - platform: uartex
     name: "ERV Bypass"
@@ -121,9 +128,15 @@ fan:
       else if (x == 3) spd = 0xc0;
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, spd, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_turn_on:
-      - switch.turn_off: erv_auto
-      - switch.turn_off: erv_sleep
-      - fan.turn_off: erv_heat
+      - if:
+          condition:
+            lambda: 'return id(airpurifier_linked).state;'
+          then:
+            - logger.log: "ERV 제어 차단: 공기청정기 연동 중"
+          else:
+            - switch.turn_off: erv_auto
+            - switch.turn_off: erv_sleep
+            - fan.turn_off: erv_heat
 
 switch:
   - platform: uartex
@@ -141,9 +154,15 @@ switch:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x02, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     on_turn_on:
-      - fan.turn_off: erv_heat
-      - fan.turn_off: erv_bypass
-      - switch.turn_off: erv_sleep
+      - if:
+          condition:
+            lambda: 'return id(airpurifier_linked).state;'
+          then:
+            - logger.log: "ERV 제어 차단: 공기청정기 연동 중"
+          else:
+            - fan.turn_off: erv_heat
+            - fan.turn_off: erv_bypass
+            - switch.turn_off: erv_sleep
 
   - platform: uartex
     name: "ERV Sleep"
@@ -160,9 +179,15 @@ switch:
       data: [0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x05, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00]
       ack: [0x30, 0xdc]
     on_turn_on:
-      - fan.turn_off: erv_heat
-      - fan.turn_off: erv_bypass
-      - switch.turn_off: erv_auto
+      - if:
+          condition:
+            lambda: 'return id(airpurifier_linked).state;'
+          then:
+            - logger.log: "ERV 제어 차단: 공기청정기 연동 중"
+          else:
+            - fan.turn_off: erv_heat
+            - fan.turn_off: erv_bypass
+            - switch.turn_off: erv_auto
 
   - platform: template
     name: "ERV Force Stop"
