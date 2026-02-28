@@ -61,21 +61,22 @@ logger:
     uartex: DEBUG
 
 globals:
-  # ERV 실제 동작 상태 직접 추적 (uartex fan.is_on 신뢰 불가)
   - id: erv_is_running
     type: bool
     restore_value: false
     initial_value: 'false'
-  # Force Stop 후 월패드 자동복원 패킷 무시용 타임스탬프 (millis 기준)
   - id: erv_force_stop_until
     type: uint32_t
     restore_value: false
     initial_value: '0'
-  # 사용자가 직접 명령 중임을 표시 (월패드 브로드캐스트와 구분)
+  # 내가 보낸 명령의 ACK인지 여부
+  # true  = command_on/off 에서 set → ACK 수신 시 state 변경 허용
+  # false = 월패드 브로드캐스트 → on_turn_on 에서 차단
   - id: erv_user_intent
     type: bool
     restore_value: false
     initial_value: 'false'
+
 binary_sensor:
   - platform: template
     name: "공기청정기 연동"
@@ -113,14 +114,17 @@ fan:
     command_on: !lambda |-
       if (id(airpurifier_linked).state) return {};
       if (millis() < id(erv_force_stop_until)) return {};
+      id(erv_user_intent) = true;
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_off: !lambda |-
       if (id(airpurifier_linked).state) return {};
       if (millis() < id(erv_force_stop_until)) return {};
-      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
+      id(erv_user_intent) = true;
+      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_speed: !lambda |-
       if (id(airpurifier_linked).state) return {};
       if (millis() < id(erv_force_stop_until)) return {};
+      id(erv_user_intent) = true;
       uint8_t spd = 0x40;
       if (x == 2) spd = 0x80;
       else if (x == 3) spd = 0xc0;
@@ -132,13 +136,20 @@ fan:
             id(erv_heat).publish_state();
             return;
           }
-          id(erv_force_stop_until) = 0;
+          if (!id(erv_user_intent)) {
+            id(erv_heat).state = false;
+            id(erv_heat).publish_state();
+            return;
+          }
+          id(erv_user_intent) = false;
           id(erv_is_running) = true;
-      - switch.turn_off: erv_auto
-      - switch.turn_off: erv_sleep
-      - fan.turn_off: erv_bypass
+          id(erv_auto).publish_state(false);
+          id(erv_sleep).publish_state(false);
+          id(erv_bypass).state = false;
+          id(erv_bypass).publish_state();
     on_turn_off:
       - lambda: |-
+          id(erv_user_intent) = false;
           if (!id(erv_bypass).state && !id(erv_auto).state && !id(erv_sleep).state)
             id(erv_is_running) = false;
 
@@ -158,14 +169,17 @@ fan:
     command_on: !lambda |-
       if (id(airpurifier_linked).state) return {};
       if (millis() < id(erv_force_stop_until)) return {};
+      id(erv_user_intent) = true;
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_off: !lambda |-
       if (id(airpurifier_linked).state) return {};
       if (millis() < id(erv_force_stop_until)) return {};
-      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
+      id(erv_user_intent) = true;
+      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_speed: !lambda |-
       if (id(airpurifier_linked).state) return {};
       if (millis() < id(erv_force_stop_until)) return {};
+      id(erv_user_intent) = true;
       uint8_t spd = 0x40;
       if (x == 2) spd = 0x80;
       else if (x == 3) spd = 0xc0;
@@ -177,13 +191,20 @@ fan:
             id(erv_bypass).publish_state();
             return;
           }
-          id(erv_force_stop_until) = 0;
+          if (!id(erv_user_intent)) {
+            id(erv_bypass).state = false;
+            id(erv_bypass).publish_state();
+            return;
+          }
+          id(erv_user_intent) = false;
           id(erv_is_running) = true;
-      - switch.turn_off: erv_auto
-      - switch.turn_off: erv_sleep
-      - fan.turn_off: erv_heat
+          id(erv_auto).publish_state(false);
+          id(erv_sleep).publish_state(false);
+          id(erv_heat).state = false;
+          id(erv_heat).publish_state();
     on_turn_off:
       - lambda: |-
+          id(erv_user_intent) = false;
           if (!id(erv_heat).state && !id(erv_auto).state && !id(erv_sleep).state)
             id(erv_is_running) = false;
 
@@ -199,24 +220,33 @@ switch:
     command_on: !lambda |-
       if (id(airpurifier_linked).state) return {};
       if (millis() < id(erv_force_stop_until)) return {};
+      id(erv_user_intent) = true;
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x02, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_off: !lambda |-
       if (id(airpurifier_linked).state) return {};
       if (millis() < id(erv_force_stop_until)) return {};
-      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
+      id(erv_user_intent) = true;
+      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_turn_on:
       - lambda: |-
           if (millis() < id(erv_force_stop_until)) {
             id(erv_auto).publish_state(false);
             return;
           }
-          id(erv_force_stop_until) = 0;
+          if (!id(erv_user_intent)) {
+            id(erv_auto).publish_state(false);
+            return;
+          }
+          id(erv_user_intent) = false;
           id(erv_is_running) = true;
-      - fan.turn_off: erv_heat
-      - fan.turn_off: erv_bypass
-      - switch.turn_off: erv_sleep
+          id(erv_heat).state = false;
+          id(erv_heat).publish_state();
+          id(erv_bypass).state = false;
+          id(erv_bypass).publish_state();
+          id(erv_sleep).publish_state(false);
     on_turn_off:
       - lambda: |-
+          id(erv_user_intent) = false;
           if (!id(erv_heat).state && !id(erv_bypass).state && !id(erv_sleep).state)
             id(erv_is_running) = false;
 
@@ -231,24 +261,33 @@ switch:
     command_on: !lambda |-
       if (id(airpurifier_linked).state) return {};
       if (millis() < id(erv_force_stop_until)) return {};
+      id(erv_user_intent) = true;
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x05, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_off: !lambda |-
       if (id(airpurifier_linked).state) return {};
       if (millis() < id(erv_force_stop_until)) return {};
-      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
+      id(erv_user_intent) = true;
+      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_turn_on:
       - lambda: |-
           if (millis() < id(erv_force_stop_until)) {
             id(erv_sleep).publish_state(false);
             return;
           }
-          id(erv_force_stop_until) = 0;
+          if (!id(erv_user_intent)) {
+            id(erv_sleep).publish_state(false);
+            return;
+          }
+          id(erv_user_intent) = false;
           id(erv_is_running) = true;
-      - fan.turn_off: erv_heat
-      - fan.turn_off: erv_bypass
-      - switch.turn_off: erv_auto
+          id(erv_heat).state = false;
+          id(erv_heat).publish_state();
+          id(erv_bypass).state = false;
+          id(erv_bypass).publish_state();
+          id(erv_auto).publish_state(false);
     on_turn_off:
       - lambda: |-
+          id(erv_user_intent) = false;
           if (!id(erv_heat).state && !id(erv_bypass).state && !id(erv_auto).state)
             id(erv_is_running) = false;
 
@@ -264,21 +303,29 @@ switch:
           condition:
             lambda: 'return id(erv_is_running);'
           then:
-            # Force Stop 후 30초간 월패드 자동복원 패킷 무시
             - lambda: 'id(erv_force_stop_until) = millis() + 30000;'
             - repeat:
                 count: 5
                 then:
-                  - uart.write: [0xAA, 0x55, 0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x75, 0x0D, 0x0D]
+                  # Power=0x00 Mode=0x00 Speed=0x00 체크섬=0x35
+                  - uart.write: [0xAA, 0x55, 0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x35, 0x0D, 0x0D]
                   - delay: 100ms
-            - lambda: 'id(erv_is_running) = false;'
             - lambda: |-
+                id(erv_is_running) = false;
+                id(erv_user_intent) = false;
                 id(erv_heat).state = false;
                 id(erv_heat).publish_state();
                 id(erv_bypass).state = false;
                 id(erv_bypass).publish_state();
                 id(erv_auto).publish_state(false);
                 id(erv_sleep).publish_state(false);
+            # 30초 후 타이머 만료 직후 한 번 더 OFF 전송
+            - delay: 30s
+            - repeat:
+                count: 3
+                then:
+                  - uart.write: [0xAA, 0x55, 0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x35, 0x0D, 0x0D]
+                  - delay: 100ms
           else:
             - logger.log: "ERV already off, skip"
     turn_off_action:
