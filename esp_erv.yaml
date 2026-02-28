@@ -16,6 +16,19 @@ uart:
           ESP_LOGI("uart_debug", "Direction: %s, Bytes: %s",
             direction == uart::UART_DIRECTION_RX ? "RX" : "TX",
             format_hex_pretty(bytes).c_str());
+          if (direction == uart::UART_DIRECTION_RX) {
+            for (int i = 0; i + 7 < (int)bytes.size(); i++) {
+              if (bytes[i]   == 0x32 &&
+                  bytes[i+2] == 0x0E &&
+                  bytes[i+3] == 0xD0 &&
+                  bytes[i+5] == 0xB1) {
+                bool linked = (bytes[i+7] == 0x01);
+                ESP_LOGI("uart_debug", "B1 found at i=%d, linked=%d", i, linked);
+                id(airpurifier_linked).publish_state(linked);
+                break;
+              }
+            }
+          }
 
 external_components:
   - source:
@@ -46,6 +59,12 @@ logger:
   logs:
     uart_debug: DEBUG
     uartex: DEBUG
+
+binary_sensor:
+  - platform: template
+    name: "공기청정기 연동"
+    id: airpurifier_linked
+    device_class: running
 
 fan:
   - platform: uartex
@@ -164,13 +183,3 @@ switch:
       - switch.turn_off: erv_power_off
     turn_off_action:
       - logger.log: "ERV Force Stop reset"
-
-binary_sensor:
-  - platform: uartex
-    name: "공기청정기 연동"
-    device_class: running
-    state:
-      data: [0x30, 0xb1, 0x00]
-      mask: [0xff, 0xff, 0xf0]
-    state_on: {offset: 7, data: [0x01]}
-    state_off: {offset: 7, data: [0x00]}
