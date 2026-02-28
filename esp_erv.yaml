@@ -78,6 +78,20 @@ binary_sensor:
     id: airpurifier_linked
     device_class: running
 
+sensor:
+  - platform: template
+    name: "ERV Force Stop 남은 시간"
+    id: erv_force_stop_remain
+    icon: "mdi:timer-lock-outline"
+    unit_of_measurement: "초"
+    accuracy_decimals: 0
+    lambda: |-
+      uint32_t now = millis();
+      if (id(erv_force_stop_until) > now)
+        return (float)((id(erv_force_stop_until) - now) / 1000);
+      return 0;
+    update_interval: 1s
+
 fan:
   - platform: uartex
     name: "ERV Heat Exchange"
@@ -108,7 +122,9 @@ fan:
       else if (x == 3) spd = 0xc0;
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, spd, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_turn_on:
-      - lambda: 'id(erv_is_running) = true;'
+      - lambda: |-
+          id(erv_force_stop_until) = 0;
+          id(erv_is_running) = true;
       - switch.turn_off: erv_auto
       - switch.turn_off: erv_sleep
       - fan.turn_off: erv_bypass
@@ -146,7 +162,9 @@ fan:
       else if (x == 3) spd = 0xc0;
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, spd, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_turn_on:
-      - lambda: 'id(erv_is_running) = true;'
+      - lambda: |-
+          id(erv_force_stop_until) = 0;
+          id(erv_is_running) = true;
       - switch.turn_off: erv_auto
       - switch.turn_off: erv_sleep
       - fan.turn_off: erv_heat
@@ -173,7 +191,9 @@ switch:
       if (millis() < id(erv_force_stop_until)) return {};
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x02, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_turn_on:
-      - lambda: 'id(erv_is_running) = true;'
+      - lambda: |-
+          id(erv_force_stop_until) = 0;
+          id(erv_is_running) = true;
       - fan.turn_off: erv_heat
       - fan.turn_off: erv_bypass
       - switch.turn_off: erv_sleep
@@ -199,7 +219,9 @@ switch:
       if (millis() < id(erv_force_stop_until)) return {};
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x05, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_turn_on:
-      - lambda: 'id(erv_is_running) = true;'
+      - lambda: |-
+          id(erv_force_stop_until) = 0;
+          id(erv_is_running) = true;
       - fan.turn_off: erv_heat
       - fan.turn_off: erv_bypass
       - switch.turn_off: erv_auto
