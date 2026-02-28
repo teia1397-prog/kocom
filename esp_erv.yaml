@@ -115,11 +115,11 @@ select:
     optimistic: true
     set_action:
       - lambda: |-
-          // 인덱스 기반으로 비교 (UTF-8 한글 문자열 비교 오류 회피)
+          // 레퍼런스로 받아서 FixedVector 복사 오류 회피
           int idx = 0;
-          auto opts = id(erv_timer_select).traits.get_options();
+          const auto &opts = id(erv_timer_select).traits.get_options();
           for (int i = 0; i < (int)opts.size(); i++) {
-            if (opts[i] == x) { idx = i; break; }
+            if (std::string(opts[i]) == x) { idx = i; break; }
           }
           id(erv_timer_hours) = idx;
           id(erv_timer_remaining) = idx * 3600;
