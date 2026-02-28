@@ -229,8 +229,10 @@ switch:
                   - delay: 100ms
             - lambda: 'id(erv_is_running) = false;'
             - lambda: |-
-                id(erv_heat).publish_state(false);
-                id(erv_bypass).publish_state(false);
+                id(erv_heat).state = false;
+                id(erv_heat).publish_state();
+                id(erv_bypass).state = false;
+                id(erv_bypass).publish_state();
                 id(erv_auto).publish_state(false);
                 id(erv_sleep).publish_state(false);
           else:
