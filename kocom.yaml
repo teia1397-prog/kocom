@@ -21,7 +21,7 @@ external_components:
   - source: github://eigger/espcomponents@latest
     components: [uartex]
     refresh: always
-    
+#    
 uartex:
   rx_timeout: 10ms
   tx_delay: 100ms
