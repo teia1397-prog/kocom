@@ -60,12 +60,87 @@ logger:
     uart_debug: DEBUG
     uartex: DEBUG
 
+globals:
+  - id: erv_timer_remaining
+    type: int
+    restore_value: false
+    initial_value: '0'
+
 binary_sensor:
   - platform: template
     name: "공기청정기 연동"
     id: airpurifier_linked
     device_class: running
 
+sensor:
+  - platform: template
+    name: "ERV 예약 남은 시간"
+    id: erv_timer_display
+    icon: "mdi:timer-outline"
+    unit_of_measurement: "분"
+    accuracy_decimals: 0
+    lambda: |-
+      return (float)(id(erv_timer_remaining) / 60);
+    update_interval: 30s
+
+select:
+  - platform: template
+    name: "ERV 예약 끄기"
+    id: erv_timer_select
+    icon: "mdi:timer"
+    options:
+      - "끄기"
+      - "1시간"
+      - "2시간"
+      - "3시간"
+      - "4시간"
+      - "5시간"
+      - "6시간"
+      - "7시간"
+      - "8시간"
+      - "9시간"
+      - "10시간"
+      - "11시간"
+      - "12시간"
+    initial_option: "끄기"
+    optimistic: true
+    set_action:
+      - lambda: |-
+          if (x == "끄기")        { id(erv_timer_remaining) = 0; }
+          else if (x == "1시간")  { id(erv_timer_remaining) = 3600; }
+          else if (x == "2시간")  { id(erv_timer_remaining) = 7200; }
+          else if (x == "3시간")  { id(erv_timer_remaining) = 10800; }
+          else if (x == "4시간")  { id(erv_timer_remaining) = 14400; }
+          else if (x == "5시간")  { id(erv_timer_remaining) = 18000; }
+          else if (x == "6시간")  { id(erv_timer_remaining) = 21600; }
+          else if (x == "7시간")  { id(erv_timer_remaining) = 25200; }
+          else if (x == "8시간")  { id(erv_timer_remaining) = 28800; }
+          else if (x == "9시간")  { id(erv_timer_remaining) = 32400; }
+          else if (x == "10시간") { id(erv_timer_remaining) = 36000; }
+          else if (x == "11시간") { id(erv_timer_remaining) = 39600; }
+          else if (x == "12시간") { id(erv_timer_remaining) = 43200; }
+
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          if (id(erv_timer_remaining) > 0) {
+            id(erv_timer_remaining) -= 1;
+            if (id(erv_timer_remaining) == 0) {
+              uint8_t cmd[] = {0xAA, 0x55, 0x30, 0xBC, 0x00, 0x48, 0x00, 0x01,
+                               0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                               0x00, 0x00, 0x35, 0x0D, 0x0D};
+              for (int i = 0; i < 5; i++) {
+                id(uart_bus).write_array(cmd, sizeof(cmd));
+                delay(100);
+              }
+              id(erv_heat).turn_off();
+              id(erv_bypass).turn_off();
+              id(erv_auto).turn_off();
+              id(erv_sleep).turn_off();
+              id(erv_timer_select).publish_state("끄기");
+            }
+          }
 
 fan:
   - platform: uartex
@@ -171,18 +246,28 @@ switch:
     name: "ERV Force Stop"
     id: erv_power_off
     icon: "mdi:power"
-    optimistic: true
+    optimistic: false
+    lambda: |-
+      return false;
     turn_on_action:
-      - repeat:
-          count: 5
+      - if:
+          condition:
+            or:
+              - fan.is_on: erv_heat
+              - fan.is_on: erv_bypass
+              - switch.is_on: erv_auto
+              - switch.is_on: erv_sleep
           then:
-            - uart.write: [0xAA, 0x55, 0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x35, 0x0D, 0x0D]
-            - delay: 100ms
-      - fan.turn_off: erv_heat
-      - fan.turn_off: erv_bypass
-      - switch.turn_off: erv_auto
-      - switch.turn_off: erv_sleep
-      - delay: 1s
-      - switch.turn_off: erv_power_off
+            - repeat:
+                count: 5
+                then:
+                  - uart.write: [0xAA, 0x55, 0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x35, 0x0D, 0x0D]
+                  - delay: 100ms
+            - fan.turn_off: erv_heat
+            - fan.turn_off: erv_bypass
+            - switch.turn_off: erv_auto
+            - switch.turn_off: erv_sleep
+          else:
+            - logger.log: "ERV already off, skip"
     turn_off_action:
       - logger.log: "ERV Force Stop reset"
