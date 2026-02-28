@@ -164,3 +164,13 @@ switch:
       - switch.turn_off: erv_power_off
     turn_off_action:
       - logger.log: "ERV Force Stop reset"
+
+binary_sensor:
+  - platform: uartex
+    name: "공기청정기 연동"
+    device_class: running
+    state:
+      data: [0x30, 0xb1, 0x00]
+      mask: [0xff, 0xff, 0xf0]
+    state_on: {offset: 7, data: [0x01]}
+    state_off: {offset: 7, data: [0x00]}
