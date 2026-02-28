@@ -66,6 +66,11 @@ globals:
     type: bool
     restore_value: false
     initial_value: 'false'
+  # Force Stop 후 월패드 자동복원 패킷 무시용 타임스탬프 (millis 기준)
+  - id: erv_force_stop_until
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
 
 binary_sensor:
   - platform: template
@@ -89,12 +94,15 @@ fan:
       return 0;
     command_on: !lambda |-
       if (id(airpurifier_linked).state) return {};
+      if (millis() < id(erv_force_stop_until)) return {};
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_off: !lambda |-
       if (id(airpurifier_linked).state) return {};
+      if (millis() < id(erv_force_stop_until)) return {};
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_speed: !lambda |-
       if (id(airpurifier_linked).state) return {};
+      if (millis() < id(erv_force_stop_until)) return {};
       uint8_t spd = 0x40;
       if (x == 2) spd = 0x80;
       else if (x == 3) spd = 0xc0;
@@ -124,12 +132,15 @@ fan:
       return 0;
     command_on: !lambda |-
       if (id(airpurifier_linked).state) return {};
+      if (millis() < id(erv_force_stop_until)) return {};
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_off: !lambda |-
       if (id(airpurifier_linked).state) return {};
+      if (millis() < id(erv_force_stop_until)) return {};
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_speed: !lambda |-
       if (id(airpurifier_linked).state) return {};
+      if (millis() < id(erv_force_stop_until)) return {};
       uint8_t spd = 0x40;
       if (x == 2) spd = 0x80;
       else if (x == 3) spd = 0xc0;
@@ -155,9 +166,11 @@ switch:
     state_off: {offset: 8, data: [0x00]}
     command_on: !lambda |-
       if (id(airpurifier_linked).state) return {};
+      if (millis() < id(erv_force_stop_until)) return {};
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x02, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_off: !lambda |-
       if (id(airpurifier_linked).state) return {};
+      if (millis() < id(erv_force_stop_until)) return {};
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x02, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_turn_on:
       - lambda: 'id(erv_is_running) = true;'
@@ -179,9 +192,11 @@ switch:
     state_off: {offset: 8, data: [0x00]}
     command_on: !lambda |-
       if (id(airpurifier_linked).state) return {};
+      if (millis() < id(erv_force_stop_until)) return {};
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x05, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     command_off: !lambda |-
       if (id(airpurifier_linked).state) return {};
+      if (millis() < id(erv_force_stop_until)) return {};
       return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x05, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
     on_turn_on:
       - lambda: 'id(erv_is_running) = true;'
@@ -205,14 +220,19 @@ switch:
           condition:
             lambda: 'return id(erv_is_running);'
           then:
+            # Force Stop 후 30초간 월패드 자동복원 패킷 무시
+            - lambda: 'id(erv_force_stop_until) = millis() + 30000;'
             - repeat:
                 count: 5
                 then:
-                  # kocom.py 기준 종료: value = 0000(off) + 40(1단속도유지) + 0000000000
-                  # AA55 30BC 0048 0001 0000 0000 4000 0000 0000 [chk] 0D0D
                   - uart.write: [0xAA, 0x55, 0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x75, 0x0D, 0x0D]
                   - delay: 100ms
             - lambda: 'id(erv_is_running) = false;'
+            - lambda: |-
+                id(erv_heat).publish_state(false);
+                id(erv_bypass).publish_state(false);
+                id(erv_auto).publish_state(false);
+                id(erv_sleep).publish_state(false);
           else:
             - logger.log: "ERV already off, skip"
     turn_off_action:
