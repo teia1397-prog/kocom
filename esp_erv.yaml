@@ -1,3 +1,29 @@
+# =====================================================================
+# ERV ESPHome - Template Fan + Select 구조
+# uartex는 RX 파싱에만 사용, TX는 uart.write로 직접 제어
+# =====================================================================
+# 패킷 구조 (AA 55 헤더 제거 후 uartex 기준 offset):
+#   [0][1]  Type    0x30,0xBC=Send / 0x30,0xDC=ACK
+#   [2][3]  Device  0x00,0x48=Fan / 0x00,0x01=Wallpad
+#   [4][5]  Room    0x00,0x01=거실
+#   [6][7]  Command 0x00,0x00=Common
+#   [8]     Power   0x11=On / 0x00=Off
+#   [9]     Mode    0x01=전열 / 0x02=자동 / 0x03=바이패스 / 0x05=수면
+#   [10]    Speed   0x40=저 / 0x80=중 / 0xC0=고
+# 체크섬: offset[0]~[17] 단순합산 (AA 55 제외)
+# 전열 ON 체크섬: 30+BC+00+48+00+01+00+00+11+01+40+00+00+00+00+00 = 0x87
+# 전열 OFF 체크섬: 30+BC+00+48+00+01+00+00+00+00+00+00+00+00+00+00 = 0x35
+# =====================================================================
+
+substitutions:
+  # 체크섬 참고값 (Power=0x11, Mode별)
+  # 전열(0x01) 저(0x40): 0x87  중(0x80): 0xC7  고(0xC0): 0x07+1=0x07(256넘어 0x47? 실제계산필요)
+  # 패킷 직접 확인 후 수정 필요시 여기서만 변경
+  erv_off_packet: "AA 55 30 BC 00 48 00 01 00 00 00 00 00 00 00 00 00 00 35 0D 0D"
+
+# =====================================================================
+# UART
+# =====================================================================
 uart:
   id: uart_bus
   baud_rate: 9600
@@ -13,20 +39,69 @@ uart:
       delimiter: [0x0D, 0x0D]
     sequence:
       - lambda: |-
-          ESP_LOGI("uart_debug", "Direction: %s, Bytes: %s",
+          ESP_LOGI("uart_debug", "%s: %s",
             direction == uart::UART_DIRECTION_RX ? "RX" : "TX",
             format_hex_pretty(bytes).c_str());
-          if (direction == uart::UART_DIRECTION_RX) {
-            for (int i = 0; i + 7 < (int)bytes.size(); i++) {
-              if (bytes[i]   == 0x32 &&
-                  bytes[i+2] == 0x0E &&
-                  bytes[i+3] == 0xD0 &&
-                  bytes[i+5] == 0xB1) {
-                bool linked = (bytes[i+7] == 0x01);
-                ESP_LOGI("uart_debug", "B1 found at i=%d, linked=%d", i, linked);
-                id(airpurifier_linked).publish_state(linked);
-                break;
+
+          if (direction != uart::UART_DIRECTION_RX) return;
+
+          // ── 공기청정기 연동 감지 (B1 패킷) ──
+          for (int i = 0; i + 7 < (int)bytes.size(); i++) {
+            if (bytes[i]   == 0x32 &&
+                bytes[i+2] == 0x0E &&
+                bytes[i+3] == 0xD0 &&
+                bytes[i+5] == 0xB1) {
+              bool linked = (bytes[i+7] == 0x01);
+              ESP_LOGI("uart_debug", "공기청정기 연동: %d", linked);
+              id(airpurifier_linked).publish_state(linked);
+              break;
+            }
+          }
+
+          // ── ERV Fan ACK 파싱 (30.DC 패킷만) ──
+          // AA 55 30 DC 00 01 00 48 ...  (총 21바이트)
+          // bytes[0..] = AA 55 포함 raw
+          for (int i = 0; i + 10 < (int)bytes.size(); i++) {
+            if (bytes[i]   == 0xAA &&
+                bytes[i+1] == 0x55 &&
+                bytes[i+2] == 0x30 &&
+                bytes[i+3] == 0xDC &&
+                bytes[i+4] == 0x00 &&
+                bytes[i+5] == 0x01 &&
+                bytes[i+6] == 0x00 &&
+                bytes[i+7] == 0x48) {
+              // Force Stop 중이면 무시
+              if (millis() < id(erv_force_stop_until)) {
+                ESP_LOGI("uart_debug", "Force Stop 중 - ACK 무시");
+                return;
               }
+
+              uint8_t power = bytes[i+8];
+              uint8_t mode  = bytes[i+9];
+              uint8_t speed = bytes[i+10];
+              bool is_on = (power & 0x01);
+
+              ESP_LOGI("uart_debug", "ERV ACK: power=0x%02X mode=0x%02X speed=0x%02X on=%d",
+                        power, mode, speed, is_on);
+
+              // ── 팬 ON/OFF 상태 ──
+              id(erv_fan_state) = is_on;
+              id(erv_fan).publish_state(is_on);
+
+              // ── 속도 상태 ──
+              if (speed == 0x40) id(erv_fan_speed) = 1;
+              else if (speed == 0x80) id(erv_fan_speed) = 2;
+              else if (speed == 0xC0) id(erv_fan_speed) = 3;
+              else id(erv_fan_speed) = 1;
+
+              // ── 모드 select 상태 ──
+              if (is_on) {
+                if (mode == 0x01) id(erv_mode).publish_state("전열환기");
+                else if (mode == 0x02) id(erv_mode).publish_state("자동");
+                else if (mode == 0x03) id(erv_mode).publish_state("바이패스");
+                else if (mode == 0x05) id(erv_mode).publish_state("수면");
+              }
+              break;
             }
           }
 
@@ -37,6 +112,7 @@ external_components:
       ref: master
     components: [uartex]
 
+# uartex: RX 파싱 인프라만 활용 (TX는 사용 안 함)
 uartex:
   rx_timeout: 200ms
   tx_delay: 300ms
@@ -58,25 +134,41 @@ logger:
   level: DEBUG
   logs:
     uart_debug: DEBUG
-    uartex: DEBUG
 
+# =====================================================================
+# Globals
+# =====================================================================
 globals:
-  - id: erv_is_running
+  # 팬 실제 ON/OFF 상태
+  - id: erv_fan_state
     type: bool
     restore_value: false
     initial_value: 'false'
+  # 현재 속도 (1/2/3)
+  - id: erv_fan_speed
+    type: int
+    restore_value: false
+    initial_value: '1'
+  # Force Stop 만료 타임스탬프 (millis)
   - id: erv_force_stop_until
     type: uint32_t
     restore_value: false
     initial_value: '0'
-  # 내가 보낸 명령의 ACK인지 여부
-  # true  = command_on/off 에서 set → ACK 수신 시 state 변경 허용
-  # false = 월패드 브로드캐스트 → on_turn_on 에서 차단
-  - id: erv_user_intent
-    type: bool
-    restore_value: false
-    initial_value: 'false'
 
+# =====================================================================
+# 헬퍼 함수 - 패킷 전송
+# 모드별 체크섬 (Power=0x11 고정):
+#   전열(01) 저(40): 30+BC+00+48+00+01+00+00+11+01+40+00+00+00+00+00 = 0x87
+#   전열(01) 중(80): 0x87 - 0x40 + 0x80 = 0xC7
+#   전열(01) 고(C0): 0x87 - 0x40 + 0xC0 = 0x07 → 256 mod = 0x07 (체크섬은 uint8)
+#   바이패스(03) 저: 0x87 + 0x02 = 0x89
+#   자동(02) 저: 0x87 + 0x01 = 0x88
+#   수면(05) 저: 0x87 + 0x04 = 0x8B
+# =====================================================================
+
+# =====================================================================
+# Sensors / Binary Sensors
+# =====================================================================
 binary_sensor:
   - platform: template
     name: "공기청정기 연동"
@@ -97,236 +189,173 @@ sensor:
       return 0;
     update_interval: 1s
 
+# =====================================================================
+# Select - 모드 선택
+# =====================================================================
+select:
+  - platform: template
+    name: "ERV 모드"
+    id: erv_mode
+    icon: "mdi:air-filter"
+    optimistic: true
+    options:
+      - "전열환기"
+      - "바이패스"
+      - "자동"
+      - "수면"
+    initial_option: "전열환기"
+    set_action:
+      - lambda: |-
+          // 모드 변경 시 현재 속도 유지하며 새 모드로 전송
+          if (!id(erv_fan_state)) return;  // 꺼져 있으면 무시
+          if (millis() < id(erv_force_stop_until)) return;
+          if (id(airpurifier_linked).state) return;
+
+          uint8_t mode_byte = 0x01;
+          if (x == "바이패스") mode_byte = 0x03;
+          else if (x == "자동") mode_byte = 0x02;
+          else if (x == "수면") mode_byte = 0x05;
+
+          uint8_t spd = 0x40;
+          if (id(erv_fan_speed) == 2) spd = 0x80;
+          else if (id(erv_fan_speed) == 3) spd = 0xC0;
+
+          // 체크섬 = 0x30+0xBC+0x00+0x48+0x00+0x01+0x00+0x00+0x11+mode+spd+0x00*5
+          uint8_t csum = (uint8_t)(0x30 + 0xBC + 0x00 + 0x48 + 0x00 + 0x01 +
+                                   0x00 + 0x00 + 0x11 + mode_byte + spd);
+          uint8_t pkt[] = {0xAA, 0x55, 0x30, 0xBC, 0x00, 0x48, 0x00, 0x01,
+                            0x00, 0x00, 0x11, mode_byte, spd,
+                            0x00, 0x00, 0x00, 0x00, 0x00,
+                            csum, 0x0D, 0x0D};
+          id(uart_bus).write_array(pkt, 21);
+          ESP_LOGI("erv", "모드변경: mode=0x%02X spd=0x%02X csum=0x%02X",
+                    mode_byte, spd, csum);
+
+# =====================================================================
+# Fan - ERV 팬 (ON/OFF + 속도)
+# template 플랫폼: uartex TX 완전 제거
+# =====================================================================
 fan:
-  - platform: uartex
-    name: "ERV Heat Exchange"
-    id: erv_heat
-    state:
-      data: [0x30, 0xdc, 0x00, 0x01, 0x00, 0x48, 0x00, 0x00]
-      mask: [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]
-    state_on: {offset: 9, data: [0x01]}
-    state_off: {offset: 8, data: [0x00], mask: [0x01]}
-    state_speed: !lambda |-
-      if (check_value(10, 0x40, data, len)) return 1;
-      if (check_value(10, 0x80, data, len)) return 2;
-      if (check_value(10, 0xc0, data, len)) return 3;
-      return 0;
-    command_on: !lambda |-
-      if (id(airpurifier_linked).state) return {};
-      if (millis() < id(erv_force_stop_until)) return {};
-      id(erv_user_intent) = true;
-      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
-    command_off: !lambda |-
-      if (id(airpurifier_linked).state) return {};
-      if (millis() < id(erv_force_stop_until)) return {};
-      id(erv_user_intent) = true;
-      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
-    command_speed: !lambda |-
-      if (id(airpurifier_linked).state) return {};
-      if (millis() < id(erv_force_stop_until)) return {};
-      id(erv_user_intent) = true;
-      uint8_t spd = 0x40;
-      if (x == 2) spd = 0x80;
-      else if (x == 3) spd = 0xc0;
-      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x01, spd, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
-    on_turn_on:
+  - platform: template
+    name: "ERV 팬"
+    id: erv_fan
+    has_speed: true
+    speed_count: 3
+
+    # ── 팬 ON ──
+    turn_on_action:
       - lambda: |-
           if (millis() < id(erv_force_stop_until)) {
-            id(erv_heat).state = false;
-            id(erv_heat).publish_state();
+            ESP_LOGI("erv", "Force Stop 중 - ON 차단");
             return;
           }
-          if (!id(erv_user_intent)) {
-            id(erv_heat).state = false;
-            id(erv_heat).publish_state();
+          if (id(airpurifier_linked).state) {
+            ESP_LOGI("erv", "공기청정기 연동 중 - ON 차단");
             return;
           }
-          id(erv_user_intent) = false;
-          id(erv_is_running) = true;
-          id(erv_auto).publish_state(false);
-          id(erv_sleep).publish_state(false);
-          id(erv_bypass).state = false;
-          id(erv_bypass).publish_state();
-    on_turn_off:
-      - lambda: |-
-          id(erv_user_intent) = false;
-          if (!id(erv_bypass).state && !id(erv_auto).state && !id(erv_sleep).state)
-            id(erv_is_running) = false;
 
-  - platform: uartex
-    name: "ERV Bypass"
-    id: erv_bypass
-    state:
-      data: [0x30, 0xdc, 0x00, 0x01, 0x00, 0x48, 0x00, 0x00]
-      mask: [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]
-    state_on: {offset: 9, data: [0x03]}
-    state_off: {offset: 8, data: [0x00], mask: [0x01]}
-    state_speed: !lambda |-
-      if (check_value(10, 0x40, data, len)) return 1;
-      if (check_value(10, 0x80, data, len)) return 2;
-      if (check_value(10, 0xc0, data, len)) return 3;
-      return 0;
-    command_on: !lambda |-
-      if (id(airpurifier_linked).state) return {};
-      if (millis() < id(erv_force_stop_until)) return {};
-      id(erv_user_intent) = true;
-      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
-    command_off: !lambda |-
-      if (id(airpurifier_linked).state) return {};
-      if (millis() < id(erv_force_stop_until)) return {};
-      id(erv_user_intent) = true;
-      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
-    command_speed: !lambda |-
-      if (id(airpurifier_linked).state) return {};
-      if (millis() < id(erv_force_stop_until)) return {};
-      id(erv_user_intent) = true;
-      uint8_t spd = 0x40;
-      if (x == 2) spd = 0x80;
-      else if (x == 3) spd = 0xc0;
-      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x03, spd, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
-    on_turn_on:
-      - lambda: |-
-          if (millis() < id(erv_force_stop_until)) {
-            id(erv_bypass).state = false;
-            id(erv_bypass).publish_state();
-            return;
-          }
-          if (!id(erv_user_intent)) {
-            id(erv_bypass).state = false;
-            id(erv_bypass).publish_state();
-            return;
-          }
-          id(erv_user_intent) = false;
-          id(erv_is_running) = true;
-          id(erv_auto).publish_state(false);
-          id(erv_sleep).publish_state(false);
-          id(erv_heat).state = false;
-          id(erv_heat).publish_state();
-    on_turn_off:
-      - lambda: |-
-          id(erv_user_intent) = false;
-          if (!id(erv_heat).state && !id(erv_auto).state && !id(erv_sleep).state)
-            id(erv_is_running) = false;
+          // 현재 선택된 모드로 켜기
+          std::string mode_str = id(erv_mode).state;
+          uint8_t mode_byte = 0x01;
+          if (mode_str == "바이패스") mode_byte = 0x03;
+          else if (mode_str == "자동") mode_byte = 0x02;
+          else if (mode_str == "수면") mode_byte = 0x05;
 
-switch:
-  - platform: uartex
-    name: "ERV Auto"
-    id: erv_auto
-    state:
-      data: [0x30, 0xdc, 0x00, 0x01, 0x00, 0x48, 0x00, 0x00]
-      mask: [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]
-    state_on: {offset: 9, data: [0x02]}
-    state_off: {offset: 8, data: [0x00], mask: [0x01]}
-    command_on: !lambda |-
-      if (id(airpurifier_linked).state) return {};
-      if (millis() < id(erv_force_stop_until)) return {};
-      id(erv_user_intent) = true;
-      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x02, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
-    command_off: !lambda |-
-      if (id(airpurifier_linked).state) return {};
-      if (millis() < id(erv_force_stop_until)) return {};
-      id(erv_user_intent) = true;
-      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
-    on_turn_on:
-      - lambda: |-
-          if (millis() < id(erv_force_stop_until)) {
-            id(erv_auto).publish_state(false);
-            return;
-          }
-          if (!id(erv_user_intent)) {
-            id(erv_auto).publish_state(false);
-            return;
-          }
-          id(erv_user_intent) = false;
-          id(erv_is_running) = true;
-          id(erv_heat).state = false;
-          id(erv_heat).publish_state();
-          id(erv_bypass).state = false;
-          id(erv_bypass).publish_state();
-          id(erv_sleep).publish_state(false);
-    on_turn_off:
-      - lambda: |-
-          id(erv_user_intent) = false;
-          if (!id(erv_heat).state && !id(erv_bypass).state && !id(erv_sleep).state)
-            id(erv_is_running) = false;
+          uint8_t spd = 0x40;
+          if (id(erv_fan_speed) == 2) spd = 0x80;
+          else if (id(erv_fan_speed) == 3) spd = 0xC0;
 
-  - platform: uartex
-    name: "ERV Sleep"
-    id: erv_sleep
-    state:
-      data: [0x30, 0xdc, 0x00, 0x01, 0x00, 0x48, 0x00, 0x00]
-      mask: [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]
-    state_on: {offset: 9, data: [0x05]}
-    state_off: {offset: 8, data: [0x00], mask: [0x01]}
-    command_on: !lambda |-
-      if (id(airpurifier_linked).state) return {};
-      if (millis() < id(erv_force_stop_until)) return {};
-      id(erv_user_intent) = true;
-      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x11, 0x05, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
-    command_off: !lambda |-
-      if (id(airpurifier_linked).state) return {};
-      if (millis() < id(erv_force_stop_until)) return {};
-      id(erv_user_intent) = true;
-      return {{0x30, 0xbc, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},{0x30, 0xdc}};
-    on_turn_on:
-      - lambda: |-
-          if (millis() < id(erv_force_stop_until)) {
-            id(erv_sleep).publish_state(false);
-            return;
-          }
-          if (!id(erv_user_intent)) {
-            id(erv_sleep).publish_state(false);
-            return;
-          }
-          id(erv_user_intent) = false;
-          id(erv_is_running) = true;
-          id(erv_heat).state = false;
-          id(erv_heat).publish_state();
-          id(erv_bypass).state = false;
-          id(erv_bypass).publish_state();
-          id(erv_auto).publish_state(false);
-    on_turn_off:
-      - lambda: |-
-          id(erv_user_intent) = false;
-          if (!id(erv_heat).state && !id(erv_bypass).state && !id(erv_auto).state)
-            id(erv_is_running) = false;
+          uint8_t csum = (uint8_t)(0x30 + 0xBC + 0x00 + 0x48 + 0x00 + 0x01 +
+                                   0x00 + 0x00 + 0x11 + mode_byte + spd);
+          uint8_t pkt[] = {0xAA, 0x55, 0x30, 0xBC, 0x00, 0x48, 0x00, 0x01,
+                            0x00, 0x00, 0x11, mode_byte, spd,
+                            0x00, 0x00, 0x00, 0x00, 0x00,
+                            csum, 0x0D, 0x0D};
+          id(uart_bus).write_array(pkt, 21);
+          ESP_LOGI("erv", "팬 ON: mode=0x%02X spd=0x%02X csum=0x%02X",
+                    mode_byte, spd, csum);
+          // 상태는 ACK 수신 후 uart debug에서 publish_state 호출
 
+    # ── 팬 OFF ──
+    turn_off_action:
+      - lambda: |-
+          if (id(airpurifier_linked).state) return;
+          // 완전 전원 OFF (Power=0x00, Mode=0x00, Speed=0x00)
+          // 체크섬: 0x30+0xBC+0x00+0x48+0x00+0x01+0x00+0x00+0x00+0x00+0x00 = 0x35
+          uint8_t pkt[] = {0xAA, 0x55, 0x30, 0xBC, 0x00, 0x48, 0x00, 0x01,
+                            0x00, 0x00, 0x00, 0x00, 0x00,
+                            0x00, 0x00, 0x00, 0x00, 0x00,
+                            0x35, 0x0D, 0x0D};
+          id(uart_bus).write_array(pkt, 21);
+          id(erv_fan_state) = false;
+          ESP_LOGI("erv", "팬 OFF 명령 전송");
+
+    # ── 속도 변경 ──
+    turn_on_speed_action:
+      - lambda: |-
+          if (!id(erv_fan_state)) return;
+          if (millis() < id(erv_force_stop_until)) return;
+          if (id(airpurifier_linked).state) return;
+
+          id(erv_fan_speed) = (int)x;
+
+          std::string mode_str = id(erv_mode).state;
+          uint8_t mode_byte = 0x01;
+          if (mode_str == "바이패스") mode_byte = 0x03;
+          else if (mode_str == "자동") mode_byte = 0x02;
+          else if (mode_str == "수면") mode_byte = 0x05;
+
+          uint8_t spd = 0x40;
+          if (x == 2) spd = 0x80;
+          else if (x == 3) spd = 0xC0;
+
+          uint8_t csum = (uint8_t)(0x30 + 0xBC + 0x00 + 0x48 + 0x00 + 0x01 +
+                                   0x00 + 0x00 + 0x11 + mode_byte + spd);
+          uint8_t pkt[] = {0xAA, 0x55, 0x30, 0xBC, 0x00, 0x48, 0x00, 0x01,
+                            0x00, 0x00, 0x11, mode_byte, spd,
+                            0x00, 0x00, 0x00, 0x00, 0x00,
+                            csum, 0x0D, 0x0D};
+          id(uart_bus).write_array(pkt, 21);
+          ESP_LOGI("erv", "속도변경: %d spd=0x%02X", (int)x, spd);
+
+# =====================================================================
+# Button - Force Stop
+# =====================================================================
+button:
   - platform: template
     name: "ERV Force Stop"
-    id: erv_power_off
+    id: erv_force_stop_btn
     icon: "mdi:power"
-    optimistic: false
-    lambda: |-
-      return false;
-    turn_on_action:
-      - if:
-          condition:
-            lambda: 'return id(erv_is_running);'
+    on_press:
+      - lambda: |-
+          if (!id(erv_fan_state)) {
+            ESP_LOGI("erv", "이미 꺼져 있음 - Force Stop 스킵");
+            return;
+          }
+          // 30초 차단 시작
+          id(erv_force_stop_until) = millis() + 30000;
+          id(erv_fan_state) = false;
+          ESP_LOGI("erv", "Force Stop 시작 - 30초 차단");
+      # OFF 패킷 5회 전송
+      - repeat:
+          count: 5
           then:
-            - lambda: 'id(erv_force_stop_until) = millis() + 30000;'
-            - repeat:
-                count: 5
-                then:
-                  # Power=0x00 Mode=0x00 Speed=0x00 체크섬=0x35
-                  - uart.write: [0xAA, 0x55, 0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x35, 0x0D, 0x0D]
-                  - delay: 100ms
-            - lambda: |-
-                id(erv_is_running) = false;
-                id(erv_user_intent) = false;
-                id(erv_heat).state = false;
-                id(erv_heat).publish_state();
-                id(erv_bypass).state = false;
-                id(erv_bypass).publish_state();
-                id(erv_auto).publish_state(false);
-                id(erv_sleep).publish_state(false);
-            # 30초 후 타이머 만료 직후 한 번 더 OFF 전송
-            - delay: 30s
-            - repeat:
-                count: 3
-                then:
-                  - uart.write: [0xAA, 0x55, 0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x35, 0x0D, 0x0D]
-                  - delay: 100ms
-          else:
-            - logger.log: "ERV already off, skip"
-    turn_off_action:
-      - logger.log: "ERV Force Stop reset"
+            - uart.write:
+                # Power=0x00 Mode=0x00 Speed=0x00 체크섬=0x35
+                data: [0xAA, 0x55, 0x30, 0xBC, 0x00, 0x48, 0x00, 0x01,
+                       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                       0x00, 0x00, 0x35, 0x0D, 0x0D]
+            - delay: 150ms
+      # UI 상태 즉시 OFF
+      - lambda: |-
+          id(erv_fan).publish_state(false);
+      # 30초 후 타이머 만료 직후 한 번 더 OFF (월패드 자동복원 대응)
+      - delay: 30s
+      - repeat:
+          count: 3
+          then:
+            - uart.write:
+                data: [0xAA, 0x55, 0x30, 0xBC, 0x00, 0x48, 0x00, 0x01,
+                       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                       0x00, 0x00, 0x35, 0x0D, 0x0D]
+            - delay: 150ms
