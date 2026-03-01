@@ -1,19 +1,22 @@
 # =====================================================================
-# ERV ESPHome - Template Fan + Select + Number 구조
-# uartex는 인프라만, TX는 uart.write 직접 제어
+# ERV ESPHome - 코콤 월패드 프로토콜 기반
 # =====================================================================
-# 패킷 구조 (AA 55 포함 raw):
-#   [0][1]  AA 55 헤더
-#   [2][3]  Type  0x30,0xBC=Send / 0x30,0xDC=ACK
-#   [4][5]  Device 0x00,0x48=Fan (보낼 때) / 0x00,0x01=Wallpad (받을 때)
-#   [6][7]  Room  0x00,0x01=거실
-#   [8][9]  Cmd   0x00,0x00
-#   [10]    Power 0x11=On / 0x00=Off
-#   [11]    Mode  0x01=전열 / 0x02=자동 / 0x03=바이패스 / 0x05=수면
-#   [12]    Speed 0x40=저 / 0x80=중 / 0xC0=고
-#   [13~17] 패딩 0x00
-#   [18]    체크섬 (byte[2]~[17] 합산 uint8)
-#   [19][20] 0x0D 0x0D
+# 코콤 패킷 구조 (21 bytes):
+#   [0~1]   AA 55          헤더
+#   [2~3]   30 BC/DC       타입 (BC=Send/Broadcast, DC=ACK)
+#   [4~5]   디바이스       (Send시 00.48=Fan / ACK/BC시 00.01=Wallpad)
+#   [6~7]   00 48          룸+Fan식별 (항상 00.48로 Fan 구분)
+#   [8~9]   00 00          커맨드
+#   [10]    P0 Power       0x11=On / 0x00=Off
+#   [11]    P1 Mode        0x01=전열 / 0x02=자동 / 0x03=바이패스 / 0x05=수면
+#   [12]    P2 Speed       0x40=저 / 0x80=중 / 0xC0=고
+#   [13]    P3 CO2 high    (항상 0x00)
+#   [14]    P4 CO2 mid     (항상 0x0A)
+#   [15]    P5 CO2 low     CO2 ppm = (0x0A<<8)|bytes[15]  ← 실측 확인
+#   [16]    P6 ErrorCode
+#   [17]    P7 unused
+#   [18]    Checksum       bytes[2]~[17] 합산 mod 256
+#   [19~20] 0D 0D          푸터
 # =====================================================================
 
 uart:
@@ -37,7 +40,7 @@ uart:
 
           if (direction != uart::UART_DIRECTION_RX) return;
 
-          // ── 공기청정기 연동 감지 ──
+          // ── 공기청정기 연동 감지 (비코콤 RS485 패킷) ──
           for (int i = 0; i + 7 < (int)bytes.size(); i++) {
             if (bytes[i]   == 0x32 &&
                 bytes[i+2] == 0x0E &&
@@ -48,63 +51,33 @@ uart:
             }
           }
 
-          // ── 월패드 ERV 상태 브로드캐스트 감시 (32.00.08.D0.00.B0 패킷) ──
-          // ERV가 켜진 상태인데 월패드가 꺼짐 신호를 보내면 → 재기동
+          // ── 코콤 Fan 패킷 파싱 (30.DC ACK + 30.BC 브로드캐스트) ──
+          // Fan 패킷 식별: AA55 30.[BC/DC] xx.xx 00.48 00.00 ...
+          // bytes[6]=0x00, bytes[7]=0x48 로 Fan 패킷 구분
           for (int i = 0; i + 18 < (int)bytes.size(); i++) {
-            if (bytes[i]   == 0x32 &&
-                bytes[i+2] == 0x08 &&
-                bytes[i+3] == 0xD0 &&
-                bytes[i+5] == 0xB0 &&
-                bytes[i+6] == 0x00) {
-              bool wallpad_erv_on = (bytes[i+17] == 0x01);
-              if (id(erv_fan_state) && !wallpad_erv_on && !id(airpurifier_linked).state) {
-                ESP_LOGI("erv", "월패드 ERV 꺼짐 감지 → 재기동");
-                std::string mode_str = id(erv_mode).current_option();
-                uint8_t mode_byte = 0x01;
-                if (mode_str == "바이패스") mode_byte = 0x03;
-                else if (mode_str == "자동") mode_byte = 0x02;
-                else if (mode_str == "수면") mode_byte = 0x05;
-                uint8_t spd = 0x40;
-                if (id(erv_fan_speed) == 2) spd = 0x80;
-                else if (id(erv_fan_speed) == 3) spd = 0xC0;
-                uint8_t csum = (uint8_t)(0x30+0xBC+0x00+0x48+0x00+0x01+
-                                         0x00+0x00+0x11+mode_byte+spd);
-                uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
-                                 0x00,0x00,0x11,mode_byte,spd,
-                                 0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
-                id(erv_ack_consumed) = false;
-                id(uart_bus).write_array(pkt, 21);
-              }
-              break;
-            }
-          }
+            if (bytes[i]   != 0xAA || bytes[i+1] != 0x55) continue;
+            if (bytes[i+2] != 0x30) continue;
+            uint8_t pkt_type = bytes[i+3];
+            if (pkt_type != 0xDC && pkt_type != 0xBC) continue;
+            if (bytes[i+6] != 0x00 || bytes[i+7] != 0x48) continue;
 
-          // ── ERV Fan ACK 파싱 (30.DC 패킷만 처리) ──
-          // raw bytes: AA 55 30 DC 00 01 00 48 00 00 [Power] [Mode] [Speed] ...
-          // 전략: 명령 전송 후 첫 번째 ACK만 처리 (erv_ack_consumed 플래그)
-          //       ERV가 자동으로 모드변경 후 보내는 추가 ACK는 무시
-          for (int i = 0; i + 12 < (int)bytes.size(); i++) {
-            if (bytes[i]   == 0xAA && bytes[i+1] == 0x55 &&
-                bytes[i+2] == 0x30 && bytes[i+3] == 0xDC &&
-                bytes[i+4] == 0x00 && bytes[i+5] == 0x01 &&
-                bytes[i+6] == 0x00 && bytes[i+7] == 0x48) {
+            uint8_t power = bytes[i+10];
+            uint8_t mode  = bytes[i+11];
+            uint8_t speed = bytes[i+12];
+            bool is_on    = (power & 0x01);
+            // CO2: 실측상 bytes[14]<<8 | bytes[15] 위치 (ERV 펌웨어 오프셋)
+            uint16_t co2  = ((uint16_t)bytes[i+14] << 8) | bytes[i+15];
 
-              // 이미 이번 명령의 ACK를 처리했으면 무시
+            if (pkt_type == 0xDC) {
+              // ── ACK 처리: 명령 전송 후 첫 번째 응답만 처리 ──
               if (id(erv_ack_consumed)) {
                 ESP_LOGI("uart_debug", "추가 ACK 무시 (이미 처리됨)");
                 break;
               }
-
-              uint8_t power = bytes[i+10];
-              uint8_t mode  = bytes[i+11];
-              uint8_t speed = bytes[i+12];
-              bool is_on = (power & 0x01);
-
-              ESP_LOGI("uart_debug", "ERV ACK power=0x%02X mode=0x%02X speed=0x%02X on=%d",
-                        power, mode, speed, is_on);
-
-              // 이 ACK 소비 완료 → 이후 추가 ACK 무시
               id(erv_ack_consumed) = true;
+
+              ESP_LOGI("uart_debug", "ERV ACK power=0x%02X mode=0x%02X speed=0x%02X co2=%d on=%d",
+                        power, mode, speed, co2, is_on);
 
               id(erv_fan_state) = is_on;
               id(erv_updating_from_ack) = true;
@@ -122,9 +95,40 @@ uart:
                 else if (mode == 0x05) id(erv_mode).publish_state("수면");
               }
 
+              if (co2 > 400) id(erv_co2).publish_state((float)co2);
+
               id(erv_updating_from_ack) = false;
-              break;
+
+            } else {
+              // ── 브로드캐스트(30.BC) 처리 ──
+              // CO2 실시간 업데이트
+              if (is_on && co2 > 400) {
+                id(erv_co2).publish_state((float)co2);
+              }
+
+              // 재기동 감지: 켜져있어야 하는데 꺼짐 브로드캐스트 수신 → 재기동
+              bool cooldown_ok = (millis() - id(erv_last_restart_at) > 10000);
+              if (id(erv_fan_state) && !is_on && cooldown_ok && !id(airpurifier_linked).state) {
+                ESP_LOGI("erv", "ERV 꺼짐 감지(브로드캐스트) → 재기동");
+                id(erv_last_restart_at) = millis();
+                std::string mode_str = id(erv_mode).current_option();
+                uint8_t mode_byte = 0x01;
+                if (mode_str == "바이패스") mode_byte = 0x03;
+                else if (mode_str == "자동") mode_byte = 0x02;
+                else if (mode_str == "수면") mode_byte = 0x05;
+                uint8_t spd = 0x40;
+                if (id(erv_fan_speed) == 2) spd = 0x80;
+                else if (id(erv_fan_speed) == 3) spd = 0xC0;
+                uint8_t csum = (uint8_t)(0x30+0xBC+0x00+0x48+0x00+0x01+
+                                         0x00+0x00+0x11+mode_byte+spd);
+                uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
+                                 0x00,0x00,0x11,mode_byte,spd,
+                                 0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
+                id(erv_ack_consumed) = false;
+                id(uart_bus).write_array(pkt, 21);
+              }
             }
+            break;
           }
 
 external_components:
@@ -165,23 +169,34 @@ globals:
     type: int
     restore_value: false
     initial_value: '1'
-  # 마지막 명령의 ACK 처리 완료 여부 → 추가 ACK 무시용
-  # 명령 전송 시 false로 리셋, 첫 ACK 수신 후 true로 설정
   - id: erv_ack_consumed
     type: bool
     restore_value: false
     initial_value: 'true'
-  # ACK 수신으로 상태 업데이트 중 → on_turn_on/off 재진입 방지
   - id: erv_updating_from_ack
     type: bool
     restore_value: false
     initial_value: 'false'
+  - id: erv_last_restart_at
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
 
 binary_sensor:
   - platform: template
     name: "공기청정기 연동"
     id: airpurifier_linked
     device_class: running
+
+sensor:
+  - platform: template
+    name: "ERV CO2"
+    id: erv_co2
+    icon: "mdi:molecule-co2"
+    unit_of_measurement: "ppm"
+    accuracy_decimals: 0
+    state_class: measurement
+    device_class: carbon_dioxide
 
 # =====================================================================
 # Select - 모드 선택
@@ -200,7 +215,7 @@ select:
     initial_option: "전열환기"
     set_action:
       - lambda: |-
-          if (id(erv_updating_from_ack)) return;  // ACK 업데이트 중 재진입 방지
+          if (id(erv_updating_from_ack)) return;
           if (!id(erv_fan_state)) return;
           if (id(airpurifier_linked).state) return;
 
@@ -218,13 +233,12 @@ select:
           uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
                            0x00,0x00,0x11,mode_byte,spd,
                            0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
-          id(erv_ack_consumed) = false;  // 다음 ACK 수신 대기
+          id(erv_ack_consumed) = false;
           id(uart_bus).write_array(pkt, 21);
           ESP_LOGI("erv", "모드변경: 0x%02X spd=0x%02X csum=0x%02X", mode_byte, spd, csum);
 
 # =====================================================================
 # Number - 속도 (1=저 / 2=중 / 3=고)
-# template fan은 속도 미지원 → number 엔티티로 분리
 # =====================================================================
 number:
   - platform: template
@@ -238,7 +252,7 @@ number:
     initial_value: 1
     set_action:
       - lambda: |-
-          if (id(erv_updating_from_ack)) return;  // ACK 업데이트 중 재진입 방지
+          if (id(erv_updating_from_ack)) return;
           if (!id(erv_fan_state)) return;
           if (id(airpurifier_linked).state) return;
 
@@ -259,12 +273,12 @@ number:
           uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
                            0x00,0x00,0x11,mode_byte,spd,
                            0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
-          id(erv_ack_consumed) = false;  // 다음 ACK 수신 대기
+          id(erv_ack_consumed) = false;
           id(uart_bus).write_array(pkt, 21);
           ESP_LOGI("erv", "속도변경: %d spd=0x%02X csum=0x%02X", (int)x, spd, csum);
 
 # =====================================================================
-# Fan - ERV 팬 ON/OFF (template, 속도 없음)
+# Fan - ERV 팬 ON/OFF
 # =====================================================================
 fan:
   - platform: template
@@ -273,7 +287,7 @@ fan:
 
     on_turn_on:
       - lambda: |-
-          if (id(erv_updating_from_ack)) return;  // ACK 업데이트 중 재진입 방지
+          if (id(erv_updating_from_ack)) return;
           if (id(airpurifier_linked).state) {
             ESP_LOGI("erv", "공기청정기 연동 중 - ON 차단");
             id(erv_fan).state = false; id(erv_fan).publish_state();
@@ -295,21 +309,19 @@ fan:
           uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
                            0x00,0x00,0x11,mode_byte,spd,
                            0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
-          id(erv_ack_consumed) = false;  // 다음 ACK 수신 대기
+          id(erv_ack_consumed) = false;
           id(uart_bus).write_array(pkt, 21);
           ESP_LOGI("erv", "팬 ON: mode=0x%02X spd=0x%02X csum=0x%02X",
                     mode_byte, spd, csum);
-          // UI 상태는 ACK(30.DC) 수신 후 uart debug 람다에서 publish_state
 
     on_turn_off:
       - lambda: |-
-          if (id(erv_updating_from_ack)) return;  // ACK 업데이트 중 재진입 방지
+          if (id(erv_updating_from_ack)) return;
           if (id(airpurifier_linked).state) return;
-          // Power=0x00 Mode=0x00 Speed=0x00 체크섬=0x35
           uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
                            0x00,0x00,0x00,0x00,0x00,
                            0x00,0x00,0x00,0x00,0x00,0x35,0x0D,0x0D};
-          id(erv_ack_consumed) = false;  // 다음 ACK 수신 대기
+          id(erv_ack_consumed) = false;
           id(uart_bus).write_array(pkt, 21);
           id(erv_fan_state) = false;
           ESP_LOGI("erv", "팬 OFF 명령 전송");
