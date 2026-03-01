@@ -328,3 +328,20 @@ fan:
           id(uart_bus).write_array(pkt, 21);
           id(erv_fan_state) = false;
           ESP_LOGI("erv", "팬 OFF 명령 전송");
+
+# =====================================================================
+# Interval - 30초마다 ERV 상태 조회 (CO2 갱신용)
+# Command=0x00,0x3A (Scan) → ERV가 30.DC 응답으로 현재 상태+CO2 반환
+# =====================================================================
+interval:
+  - interval: 30s
+    then:
+      - lambda: |-
+          // ERV 켜진 상태에서만 조회 (꺼진 상태면 불필요)
+          if (!id(erv_fan_state)) return;
+          uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
+                           0x00,0x3A,0x00,0x00,0x00,0x00,0x00,0x00,
+                           0x00,0x00,0x6F,0x0D,0x0D};
+          id(erv_ack_consumed) = false;
+          id(uart_bus).write_array(pkt, 21);
+          ESP_LOGI("erv", "상태 조회 (CO2 갱신)");
