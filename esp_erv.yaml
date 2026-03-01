@@ -12,7 +12,7 @@
 #   [12]    P2 Speed       0x40=저 / 0x80=중 / 0xC0=고
 #   [13]    P3 CO2 high    (항상 0x00)
 #   [14]    P4 CO2 mid     (항상 0x0A)
-#   [15]    P5 CO2 low     CO2 ppm = (0x0A<<8)|bytes[15]  ← 실측 확인
+#   [15]    P5 CO2 low     CO2 ppm = ((0x0A<<8)|bytes[15]) / 2.5  ← 실측 확인
 #   [16]    P6 ErrorCode
 #   [17]    P7 unused
 #   [18]    Checksum       bytes[2]~[17] 합산 mod 256
@@ -65,7 +65,7 @@ uart:
             uint8_t mode  = bytes[i+11];
             uint8_t speed = bytes[i+12];
             bool is_on    = (power & 0x01);
-            // CO2: 실측상 bytes[14]<<8 | bytes[15] 위치 (ERV 펌웨어 오프셋)
+            // CO2: 실측상 bytes[14]<<8|bytes[15], 스케일 /2.5 (룸콘 대비 검증)
             uint16_t co2  = ((uint16_t)bytes[i+14] << 8) | bytes[i+15];
 
             if (pkt_type == 0xDC) {
@@ -95,7 +95,7 @@ uart:
                 else if (mode == 0x05) id(erv_mode).publish_state("수면");
               }
 
-              if (co2 > 400) id(erv_co2).publish_state((float)co2);
+              if (co2 > 400) id(erv_co2).publish_state((float)co2 / 2.5f);
 
               id(erv_updating_from_ack) = false;
 
@@ -103,12 +103,14 @@ uart:
               // ── 브로드캐스트(30.BC) 처리 ──
               // CO2 실시간 업데이트
               if (is_on && co2 > 400) {
-                id(erv_co2).publish_state((float)co2);
+                id(erv_co2).publish_state((float)co2 / 2.5f);
               }
 
               // 재기동 감지: 켜져있어야 하는데 꺼짐 브로드캐스트 수신 → 재기동
+              // erv_ack_consumed=false (명령 대기 중)이면 무시 (모드전환 후 ERV 자동 브로드캐스트)
               bool cooldown_ok = (millis() - id(erv_last_restart_at) > 10000);
-              if (id(erv_fan_state) && !is_on && cooldown_ok && !id(airpurifier_linked).state) {
+              if (id(erv_fan_state) && !is_on && cooldown_ok
+                  && id(erv_ack_consumed) && !id(airpurifier_linked).state) {
                 ESP_LOGI("erv", "ERV 꺼짐 감지(브로드캐스트) → 재기동");
                 id(erv_last_restart_at) = millis();
                 std::string mode_str = id(erv_mode).current_option();
