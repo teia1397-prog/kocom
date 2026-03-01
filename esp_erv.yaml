@@ -56,9 +56,11 @@ uart:
                 bytes[i+4] == 0x00 && bytes[i+5] == 0x01 &&
                 bytes[i+6] == 0x00 && bytes[i+7] == 0x48) {
 
-              if (millis() < id(erv_force_stop_until)) {
-                ESP_LOGI("uart_debug", "Force Stop 중 - ACK 무시");
-                return;
+              // 명령 전송 후 2초간 ACK 무시 (ERV 본체 자동 모드변경 방지)
+              if (millis() - id(erv_last_cmd_at) < 2000) {
+                ESP_LOGI("uart_debug", "명령 안정화 대기 중 - ACK 무시 (%dms)",
+                         (int)(millis() - id(erv_last_cmd_at)));
+                break;
               }
 
               uint8_t power = bytes[i+10];
@@ -128,7 +130,8 @@ globals:
     type: int
     restore_value: false
     initial_value: '1'
-  - id: erv_force_stop_until
+  # 마지막 명령 전송 시각 (ms) → 2초간 ACK 무시로 ERV 자동 모드전환 방지
+  - id: erv_last_cmd_at
     type: uint32_t
     restore_value: false
     initial_value: '0'
@@ -143,20 +146,6 @@ binary_sensor:
     name: "공기청정기 연동"
     id: airpurifier_linked
     device_class: running
-
-sensor:
-  - platform: template
-    name: "ERV Force Stop 남은 시간"
-    id: erv_force_stop_remain
-    icon: "mdi:timer-lock-outline"
-    unit_of_measurement: "초"
-    accuracy_decimals: 0
-    lambda: |-
-      uint32_t now = millis();
-      if (id(erv_force_stop_until) > now)
-        return (float)((id(erv_force_stop_until) - now) / 1000);
-      return 0;
-    update_interval: 1s
 
 # =====================================================================
 # Select - 모드 선택
@@ -177,7 +166,6 @@ select:
       - lambda: |-
           if (id(erv_updating_from_ack)) return;  // ACK 업데이트 중 재진입 방지
           if (!id(erv_fan_state)) return;
-          if (millis() < id(erv_force_stop_until)) return;
           if (id(airpurifier_linked).state) return;
 
           uint8_t mode_byte = 0x01;
@@ -194,6 +182,7 @@ select:
           uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
                            0x00,0x00,0x11,mode_byte,spd,
                            0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
+          id(erv_last_cmd_at) = millis();
           id(uart_bus).write_array(pkt, 21);
           ESP_LOGI("erv", "모드변경: 0x%02X spd=0x%02X csum=0x%02X", mode_byte, spd, csum);
 
@@ -215,7 +204,6 @@ number:
       - lambda: |-
           if (id(erv_updating_from_ack)) return;  // ACK 업데이트 중 재진입 방지
           if (!id(erv_fan_state)) return;
-          if (millis() < id(erv_force_stop_until)) return;
           if (id(airpurifier_linked).state) return;
 
           id(erv_fan_speed) = (int)x;
@@ -235,6 +223,7 @@ number:
           uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
                            0x00,0x00,0x11,mode_byte,spd,
                            0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
+          id(erv_last_cmd_at) = millis();
           id(uart_bus).write_array(pkt, 21);
           ESP_LOGI("erv", "속도변경: %d spd=0x%02X csum=0x%02X", (int)x, spd, csum);
 
@@ -249,11 +238,6 @@ fan:
     on_turn_on:
       - lambda: |-
           if (id(erv_updating_from_ack)) return;  // ACK 업데이트 중 재진입 방지
-          if (millis() < id(erv_force_stop_until)) {
-            ESP_LOGI("erv", "Force Stop 중 - ON 차단");
-            id(erv_fan).state = false; id(erv_fan).publish_state();
-            return;
-          }
           if (id(airpurifier_linked).state) {
             ESP_LOGI("erv", "공기청정기 연동 중 - ON 차단");
             id(erv_fan).state = false; id(erv_fan).publish_state();
@@ -275,6 +259,7 @@ fan:
           uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
                            0x00,0x00,0x11,mode_byte,spd,
                            0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
+          id(erv_last_cmd_at) = millis();
           id(uart_bus).write_array(pkt, 21);
           ESP_LOGI("erv", "팬 ON: mode=0x%02X spd=0x%02X csum=0x%02X",
                     mode_byte, spd, csum);
@@ -288,42 +273,7 @@ fan:
           uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
                            0x00,0x00,0x00,0x00,0x00,
                            0x00,0x00,0x00,0x00,0x00,0x35,0x0D,0x0D};
+          id(erv_last_cmd_at) = millis();
           id(uart_bus).write_array(pkt, 21);
           id(erv_fan_state) = false;
           ESP_LOGI("erv", "팬 OFF 명령 전송");
-
-# =====================================================================
-# Button - Force Stop
-# =====================================================================
-button:
-  - platform: template
-    name: "ERV Force Stop"
-    id: erv_force_stop_btn
-    icon: "mdi:power"
-    on_press:
-      - lambda: |-
-          if (!id(erv_fan_state)) {
-            ESP_LOGI("erv", "이미 꺼져 있음 - 스킵");
-            return;
-          }
-          id(erv_force_stop_until) = millis() + 30000;
-          id(erv_fan_state) = false;
-          ESP_LOGI("erv", "Force Stop 시작 - 30초 차단");
-      - repeat:
-          count: 5
-          then:
-            - uart.write:
-                data: [0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
-                       0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-                       0x00,0x00,0x35,0x0D,0x0D]
-            - delay: 150ms
-      - lambda: 'id(erv_fan).state = false; id(erv_fan).publish_state();'
-      - delay: 30s
-      - repeat:
-          count: 3
-          then:
-            - uart.write:
-                data: [0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
-                       0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-                       0x00,0x00,0x35,0x0D,0x0D]
-            - delay: 150ms
