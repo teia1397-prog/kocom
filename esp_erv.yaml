@@ -50,16 +50,17 @@ uart:
 
           // ── ERV Fan ACK 파싱 (30.DC 패킷만 처리) ──
           // raw bytes: AA 55 30 DC 00 01 00 48 00 00 [Power] [Mode] [Speed] ...
+          // 전략: 명령 전송 후 첫 번째 ACK만 처리 (erv_ack_consumed 플래그)
+          //       ERV가 자동으로 모드변경 후 보내는 추가 ACK는 무시
           for (int i = 0; i + 12 < (int)bytes.size(); i++) {
             if (bytes[i]   == 0xAA && bytes[i+1] == 0x55 &&
                 bytes[i+2] == 0x30 && bytes[i+3] == 0xDC &&
                 bytes[i+4] == 0x00 && bytes[i+5] == 0x01 &&
                 bytes[i+6] == 0x00 && bytes[i+7] == 0x48) {
 
-              // 명령 전송 후 2초간 ACK 무시 (ERV 본체 자동 모드변경 방지)
-              if (millis() - id(erv_last_cmd_at) < 2000) {
-                ESP_LOGI("uart_debug", "명령 안정화 대기 중 - ACK 무시 (%dms)",
-                         (int)(millis() - id(erv_last_cmd_at)));
+              // 이미 이번 명령의 ACK를 처리했으면 무시
+              if (id(erv_ack_consumed)) {
+                ESP_LOGI("uart_debug", "추가 ACK 무시 (이미 처리됨)");
                 break;
               }
 
@@ -70,6 +71,9 @@ uart:
 
               ESP_LOGI("uart_debug", "ERV ACK power=0x%02X mode=0x%02X speed=0x%02X on=%d",
                         power, mode, speed, is_on);
+
+              // 이 ACK 소비 완료 → 이후 추가 ACK 무시
+              id(erv_ack_consumed) = true;
 
               id(erv_fan_state) = is_on;
               id(erv_updating_from_ack) = true;
@@ -130,11 +134,12 @@ globals:
     type: int
     restore_value: false
     initial_value: '1'
-  # 마지막 명령 전송 시각 (ms) → 2초간 ACK 무시로 ERV 자동 모드전환 방지
-  - id: erv_last_cmd_at
-    type: uint32_t
+  # 마지막 명령의 ACK 처리 완료 여부 → 추가 ACK 무시용
+  # 명령 전송 시 false로 리셋, 첫 ACK 수신 후 true로 설정
+  - id: erv_ack_consumed
+    type: bool
     restore_value: false
-    initial_value: '0'
+    initial_value: 'true'
   # ACK 수신으로 상태 업데이트 중 → on_turn_on/off 재진입 방지
   - id: erv_updating_from_ack
     type: bool
@@ -182,7 +187,7 @@ select:
           uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
                            0x00,0x00,0x11,mode_byte,spd,
                            0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
-          id(erv_last_cmd_at) = millis();
+          id(erv_ack_consumed) = false;  // 다음 ACK 수신 대기
           id(uart_bus).write_array(pkt, 21);
           ESP_LOGI("erv", "모드변경: 0x%02X spd=0x%02X csum=0x%02X", mode_byte, spd, csum);
 
@@ -223,7 +228,7 @@ number:
           uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
                            0x00,0x00,0x11,mode_byte,spd,
                            0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
-          id(erv_last_cmd_at) = millis();
+          id(erv_ack_consumed) = false;  // 다음 ACK 수신 대기
           id(uart_bus).write_array(pkt, 21);
           ESP_LOGI("erv", "속도변경: %d spd=0x%02X csum=0x%02X", (int)x, spd, csum);
 
@@ -259,7 +264,7 @@ fan:
           uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
                            0x00,0x00,0x11,mode_byte,spd,
                            0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
-          id(erv_last_cmd_at) = millis();
+          id(erv_ack_consumed) = false;  // 다음 ACK 수신 대기
           id(uart_bus).write_array(pkt, 21);
           ESP_LOGI("erv", "팬 ON: mode=0x%02X spd=0x%02X csum=0x%02X",
                     mode_byte, spd, csum);
@@ -273,7 +278,7 @@ fan:
           uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
                            0x00,0x00,0x00,0x00,0x00,
                            0x00,0x00,0x00,0x00,0x00,0x35,0x0D,0x0D};
-          id(erv_last_cmd_at) = millis();
+          id(erv_ack_consumed) = false;  // 다음 ACK 수신 대기
           id(uart_bus).write_array(pkt, 21);
           id(erv_fan_state) = false;
           ESP_LOGI("erv", "팬 OFF 명령 전송");
