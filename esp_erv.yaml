@@ -48,6 +48,37 @@ uart:
             }
           }
 
+          // ── 월패드 ERV 상태 브로드캐스트 감시 (32.00.08.D0.00.B0 패킷) ──
+          // ERV가 켜진 상태인데 월패드가 꺼짐 신호를 보내면 → 재기동
+          for (int i = 0; i + 18 < (int)bytes.size(); i++) {
+            if (bytes[i]   == 0x32 &&
+                bytes[i+2] == 0x08 &&
+                bytes[i+3] == 0xD0 &&
+                bytes[i+5] == 0xB0 &&
+                bytes[i+6] == 0x00) {
+              bool wallpad_erv_on = (bytes[i+17] == 0x01);
+              if (id(erv_fan_state) && !wallpad_erv_on && !id(airpurifier_linked).state) {
+                ESP_LOGI("erv", "월패드 ERV 꺼짐 감지 → 재기동");
+                std::string mode_str = id(erv_mode).current_option();
+                uint8_t mode_byte = 0x01;
+                if (mode_str == "바이패스") mode_byte = 0x03;
+                else if (mode_str == "자동") mode_byte = 0x02;
+                else if (mode_str == "수면") mode_byte = 0x05;
+                uint8_t spd = 0x40;
+                if (id(erv_fan_speed) == 2) spd = 0x80;
+                else if (id(erv_fan_speed) == 3) spd = 0xC0;
+                uint8_t csum = (uint8_t)(0x30+0xBC+0x00+0x48+0x00+0x01+
+                                         0x00+0x00+0x11+mode_byte+spd);
+                uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
+                                 0x00,0x00,0x11,mode_byte,spd,
+                                 0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
+                id(erv_ack_consumed) = false;
+                id(uart_bus).write_array(pkt, 21);
+              }
+              break;
+            }
+          }
+
           // ── ERV Fan ACK 파싱 (30.DC 패킷만 처리) ──
           // raw bytes: AA 55 30 DC 00 01 00 48 00 00 [Power] [Mode] [Speed] ...
           // 전략: 명령 전송 후 첫 번째 ACK만 처리 (erv_ack_consumed 플래그)
