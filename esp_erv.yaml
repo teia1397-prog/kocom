@@ -69,7 +69,18 @@ uart:
             uint16_t co2  = ((uint16_t)bytes[i+14] << 8) | bytes[i+15];
 
             if (pkt_type == 0xDC) {
-              // ── ACK 처리: 명령 전송 후 첫 번째 응답만 처리 ──
+              // ── ACK 처리 ──
+              // CO2 갱신 조회 중이면 CO2만 파싱하고 상태 업데이트 스킵
+              if (id(erv_co2_poll)) {
+                id(erv_co2_poll) = false;
+                if (co2 > 400) {
+                  float co2_ppm = (float)co2 / 2.5f;
+                  id(erv_co2).publish_state(co2_ppm);
+                  ESP_LOGI("erv", "CO2 갱신: %.0f ppm (raw=%d)", co2_ppm, co2);
+                }
+                break;
+              }
+
               if (id(erv_ack_consumed)) {
                 ESP_LOGI("uart_debug", "추가 ACK 무시 (이미 처리됨)");
                 break;
@@ -183,6 +194,11 @@ globals:
     type: uint32_t
     restore_value: false
     initial_value: '0'
+  # CO2 갱신 조회 중 → ACK에서 상태 업데이트 스킵, CO2만 파싱
+  - id: erv_co2_poll
+    type: bool
+    restore_value: false
+    initial_value: 'false'
 
 binary_sensor:
   - platform: template
@@ -330,18 +346,29 @@ fan:
           ESP_LOGI("erv", "팬 OFF 명령 전송");
 
 # =====================================================================
-# Interval - 30초마다 ERV 상태 조회 (CO2 갱신용)
-# Command=0x00,0x3A (Scan) → ERV가 30.DC 응답으로 현재 상태+CO2 반환
+# Interval - 10초마다 ON 명령 재전송 (CO2 갱신용)
+# ERV가 ON 명령을 받으면 현재 상태+CO2로 30.DC+30.BC 응답
+# Scan(0x3A) 방식은 ACK에서 power=0x00 에코로 팬이 꺼지는 부작용 있음
 # =====================================================================
 interval:
-  - interval: 30s
+  - interval: 10s
     then:
       - lambda: |-
-          // ERV 켜진 상태에서만 조회 (꺼진 상태면 불필요)
-          if (!id(erv_fan_state)) return;
+          if (!id(erv_fan_state)) return;  // 꺼진 상태면 스킵
+          if (id(airpurifier_linked).state) return;
+          std::string mode_str = id(erv_mode).current_option();
+          uint8_t mode_byte = 0x01;
+          if (mode_str == "바이패스") mode_byte = 0x03;
+          else if (mode_str == "자동") mode_byte = 0x02;
+          else if (mode_str == "수면") mode_byte = 0x05;
+          uint8_t spd = 0x40;
+          if (id(erv_fan_speed) == 2) spd = 0x80;
+          else if (id(erv_fan_speed) == 3) spd = 0xC0;
+          uint8_t csum = (uint8_t)(0x30+0xBC+0x00+0x48+0x00+0x01+
+                                   0x00+0x00+0x11+mode_byte+spd);
           uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
-                           0x00,0x3A,0x00,0x00,0x00,0x00,0x00,0x00,
-                           0x00,0x00,0x6F,0x0D,0x0D};
-          id(erv_ack_consumed) = false;
+                           0x00,0x00,0x11,mode_byte,spd,
+                           0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
+          id(erv_co2_poll) = true;   // CO2 갱신 전용 플래그
           id(uart_bus).write_array(pkt, 21);
-          ESP_LOGI("erv", "상태 조회 (CO2 갱신)");
+          ESP_LOGI("erv", "CO2 갱신 조회");
