@@ -101,8 +101,8 @@ uart:
 
             } else {
               // ── 브로드캐스트(30.BC) 처리 ──
-              // CO2 실시간 업데이트
-              if (is_on && co2 > 400) {
+              // CO2 실시간 업데이트 (on/off 무관)
+              if (co2 > 400) {
                 id(erv_co2).publish_state((float)co2 / 2.5f);
               }
 
@@ -199,6 +199,7 @@ sensor:
     accuracy_decimals: 0
     state_class: measurement
     device_class: carbon_dioxide
+    force_update: true
 
 # =====================================================================
 # Select - 모드 선택
