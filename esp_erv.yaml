@@ -1,7 +1,5 @@
-# ============================================================
-# esp_erv.yaml - 전열교환기 + 천장형 공기청정기 제어
-# CRC: NASA protocol CRC, pkt[3:]부터 계산, little-endian 저장
-# ============================================================
+# esp_erv.yaml - ERV 전원 제어 (전원 스위치만)
+# NASA CRC: pkt[3:]부터 계산, hi 먼저 lo 나중 저장
 
 uart:
   id: uart_bus
@@ -28,39 +26,10 @@ logger:
     uart_debug: DEBUG
 
 globals:
-  - id: g_power
-    type: bool
-    restore_value: false
-    initial_value: 'false'
-  - id: g_mode
-    type: int
-    restore_value: false
-    initial_value: '0'
   - id: g_seq
     type: int
     restore_value: false
     initial_value: '0'
-
-binary_sensor:
-  - platform: template
-    name: "Air Purifier Linked"
-    id: airpurifier_linked
-    device_class: running
-    lambda: 'return id(g_power);'
-
-# ──────────────────────────────────────────────────────────
-# NASA CRC 계산: pkt[3:]부터, rotate-xor 방식, little-endian
-# ──────────────────────────────────────────────────────────
-# uint16_t nasa_crc(data[3:]):
-#   crc = 0
-#   for b in data:
-#     crc = ((crc>>8)|(crc<<8)) & 0xFFFF
-#     crc ^= b
-#     crc ^= (crc&0xFF)>>4
-#     crc ^= (crc<<12)&0xFFFF
-#     crc ^= ((crc&0xFF)<<5)&0xFFFF
-#   → lo = crc&0xFF, hi = (crc>>8)&0xFF
-# ──────────────────────────────────────────────────────────
 
 switch:
   - platform: template
@@ -71,6 +40,7 @@ switch:
     restore_mode: ALWAYS_OFF
     turn_on_action:
       - lambda: |-
+          // ON: 41.49=01, 41.47=02, 40.06=00, 40.11=00, 40.60=00
           uint8_t pkt[] = {
             0x32, 0x00, 0x1D,
             0x6A, 0xEE, 0xFF, 0x35, 0x01, 0x00,
@@ -85,21 +55,21 @@ switch:
             0x00, 0x00, 0x34
           };
           uint16_t crc = 0;
-          for (int ci = 3; ci < sizeof(pkt) - 3; ci++) {
+          for (int ci = 3; ci < (int)sizeof(pkt) - 3; ci++) {
             crc = ((crc >> 8) | ((crc & 0xFF) << 8)) & 0xFFFF;
             crc ^= pkt[ci];
             crc ^= (crc & 0xFF) >> 4;
             crc ^= (crc << 12) & 0xFFFF;
             crc ^= ((crc & 0xFF) << 5) & 0xFFFF;
           }
-          pkt[sizeof(pkt)-3] = crc & 0xFF;
-          pkt[sizeof(pkt)-2] = (crc >> 8) & 0xFF;
+          pkt[sizeof(pkt)-3] = (crc >> 8) & 0xFF;  // hi 먼저
+          pkt[sizeof(pkt)-2] = crc & 0xFF;           // lo 나중
           id(uart_bus).write_array(pkt, sizeof(pkt));
-          id(g_power) = true;
           id(g_seq) = (id(g_seq) + 1) & 0xFF;
-          ESP_LOGI("erv", "Power ON sent, CRC=%02X %02X", crc&0xFF, (crc>>8)&0xFF);
+          ESP_LOGI("erv", "ON sent CRC=%02X %02X", (crc>>8)&0xFF, crc&0xFF);
     turn_off_action:
       - lambda: |-
+          // OFF: 41.49=00
           uint8_t pkt[] = {
             0x32, 0x00, 0x11,
             0x6A, 0xEE, 0xFF, 0x35, 0x01, 0x00,
@@ -110,142 +80,15 @@ switch:
             0x00, 0x00, 0x34
           };
           uint16_t crc = 0;
-          for (int ci = 3; ci < sizeof(pkt) - 3; ci++) {
+          for (int ci = 3; ci < (int)sizeof(pkt) - 3; ci++) {
             crc = ((crc >> 8) | ((crc & 0xFF) << 8)) & 0xFFFF;
             crc ^= pkt[ci];
             crc ^= (crc & 0xFF) >> 4;
             crc ^= (crc << 12) & 0xFFFF;
             crc ^= ((crc & 0xFF) << 5) & 0xFFFF;
           }
-          pkt[sizeof(pkt)-3] = crc & 0xFF;
-          pkt[sizeof(pkt)-2] = (crc >> 8) & 0xFF;
-          id(uart_bus).write_array(pkt, sizeof(pkt));
-          id(g_power) = false;
-          id(g_seq) = (id(g_seq) + 1) & 0xFF;
-          ESP_LOGI("erv", "Power OFF sent, CRC=%02X %02X", crc&0xFF, (crc>>8)&0xFF);
-
-select:
-  - platform: template
-    name: "ERV Mode"
-    id: erv_mode
-    icon: mdi:air-filter
-    optimistic: true
-    restore_value: false
-    initial_option: "전열환기"
-    options:
-      - "꺼짐"
-      - "스마트환기"
-      - "청정"
-      - "환기"
-      - "전열환기"
-    on_value:
-      - lambda: |-
-          uint8_t params[24];
-          uint8_t pc = 0;
-          bool power_on = true;
-
-          if (x == "꺼짐") {
-            params[0]=0x41; params[1]=0x49; params[2]=0x00;
-            pc=1; power_on=false;
-          } else if (x == "스마트환기") {
-            params[0]=0x41; params[1]=0x49; params[2]=0x01;
-            params[3]=0x41; params[4]=0x47; params[5]=0x02;
-            params[6]=0x40; params[7]=0x06; params[8]=0x00;
-            params[9]=0x40; params[10]=0x11; params[11]=0x00;
-            params[12]=0x40; params[13]=0x60; params[14]=0x00;
-            pc=5; id(g_mode)=2;
-          } else if (x == "청정") {
-            params[0]=0x40; params[1]=0x07; params[2]=0x0A;
-            params[3]=0x40; params[4]=0x59; params[5]=0x01;
-            params[6]=0x41; params[7]=0x47; params[8]=0x02;
-            params[9]=0x41; params[10]=0x48; params[11]=0x0A;
-            params[12]=0x41; params[13]=0x49; params[14]=0x01;
-            params[15]=0x43; params[16]=0x02; params[17]=0x00; params[18]=0x00;
-            pc=6; id(g_mode)=3;
-          } else if (x == "환기") {
-            params[0]=0x40; params[1]=0x06; params[2]=0x00;
-            params[3]=0x40; params[4]=0x11; params[5]=0x00;
-            params[6]=0x40; params[7]=0x60; params[8]=0x00;
-            params[9]=0x41; params[10]=0x47; params[11]=0x00;
-            params[12]=0x41; params[13]=0x49; params[14]=0x01;
-            pc=5; id(g_mode)=0;
-          } else if (x == "전열환기") {
-            params[0]=0x40; params[1]=0x06; params[2]=0x00;
-            params[3]=0x40; params[4]=0x11; params[5]=0x00;
-            params[6]=0x40; params[7]=0x60; params[8]=0x00;
-            params[9]=0x41; params[10]=0x47; params[11]=0x01;
-            params[12]=0x41; params[13]=0x49; params[14]=0x01;
-            pc=5; id(g_mode)=1;
-          } else { return; }
-
-          // 패킷 조립
-          // len = 전체 - 3 (32 00 len 제외) - 3 (crc + 34) = data부분
-          uint8_t data_bytes = pc * 3;
-          uint8_t len_byte = 0x08 + data_bytes;  // fixed header(6) + seq(1) + pc(1) + data
-          uint8_t pkt[64];
-          int pi = 0;
-          pkt[pi++]=0x32; pkt[pi++]=0x00; pkt[pi++]=len_byte;
-          pkt[pi++]=0x6A; pkt[pi++]=0xEE; pkt[pi++]=0xFF;
-          pkt[pi++]=0x35; pkt[pi++]=0x01; pkt[pi++]=0x00;
-          pkt[pi++]=0xC0; pkt[pi++]=0x13;
-          pkt[pi++]=(uint8_t)(id(g_seq) & 0xFF);
-          pkt[pi++]=pc;
-          for (int di=0; di<pc*3; di++) pkt[pi++]=params[di];
-          // NASA CRC from pkt[3:]
-          uint16_t crc = 0;
-          for (int ci=3; ci<pi; ci++) {
-            crc = ((crc >> 8) | ((crc & 0xFF) << 8)) & 0xFFFF;
-            crc ^= pkt[ci];
-            crc ^= (crc & 0xFF) >> 4;
-            crc ^= (crc << 12) & 0xFFFF;
-            crc ^= ((crc & 0xFF) << 5) & 0xFFFF;
-          }
-          pkt[pi++]=crc & 0xFF;
-          pkt[pi++]=(crc >> 8) & 0xFF;
-          pkt[pi++]=0x34;
-          id(uart_bus).write_array(pkt, pi);
-          id(g_power) = power_on;
-          id(g_seq) = (id(g_seq) + 1) & 0xFF;
-          ESP_LOGI("erv", "Mode [%s] sent, CRC=%02X %02X", x.c_str(), crc&0xFF, (crc>>8)&0xFF);
-
-  - platform: template
-    name: "ERV Speed"
-    id: erv_speed
-    icon: mdi:fan-speed-1
-    optimistic: true
-    restore_value: false
-    initial_option: "자동"
-    options:
-      - "자동"
-      - "미풍"
-      - "약풍"
-      - "강풍"
-    on_value:
-      - lambda: |-
-          uint8_t spd = 0x00;
-          if (x == "미풍") spd = 0x01;
-          else if (x == "약풍") spd = 0x02;
-          else if (x == "강풍") spd = 0x03;
-          uint8_t pkt[] = {
-            0x32, 0x00, 0x14,
-            0x6A, 0xEE, 0xFF, 0x35, 0x01, 0x00,
-            0xC0, 0x13,
-            (uint8_t)(id(g_seq) & 0xFF),
-            0x02,
-            0x40, 0x06, spd,
-            0x40, 0x07, spd,
-            0x00, 0x00, 0x34
-          };
-          uint16_t crc = 0;
-          for (int ci=3; ci<sizeof(pkt)-3; ci++) {
-            crc = ((crc >> 8) | ((crc & 0xFF) << 8)) & 0xFFFF;
-            crc ^= pkt[ci];
-            crc ^= (crc & 0xFF) >> 4;
-            crc ^= (crc << 12) & 0xFFFF;
-            crc ^= ((crc & 0xFF) << 5) & 0xFFFF;
-          }
-          pkt[sizeof(pkt)-3]=crc & 0xFF;
-          pkt[sizeof(pkt)-2]=(crc >> 8) & 0xFF;
+          pkt[sizeof(pkt)-3] = (crc >> 8) & 0xFF;
+          pkt[sizeof(pkt)-2] = crc & 0xFF;
           id(uart_bus).write_array(pkt, sizeof(pkt));
           id(g_seq) = (id(g_seq) + 1) & 0xFF;
-          ESP_LOGI("erv", "Speed [%s] sent, CRC=%02X %02X", x.c_str(), crc&0xFF, (crc>>8)&0xFF);
+          ESP_LOGI("erv", "OFF sent CRC=%02X %02X", (crc>>8)&0xFF, crc&0xFF);
