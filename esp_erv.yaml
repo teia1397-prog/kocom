@@ -13,7 +13,7 @@ uart:
   tx_pin: GPIO02
   debug:
     direction: BOTH
-    dummy_receiver: false
+    dummy_receiver: true
     after:
       delimiter: [0x34]
     sequence:
