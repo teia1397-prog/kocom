@@ -182,22 +182,22 @@ select:
           // 전체 패킷: 32.00.[len].src(3).flags(3).dst(2).seq.cmd.params.crc(2).34
           uint8_t pkt_len = 3 + 3 + 3 + 2 + 1 + 1 + param_count*3 + 2 + 1;
           uint8_t pkt[64] = {};
-          int i = 0;
-          pkt[i++] = 0x32; pkt[i++] = 0x00;
-          pkt[i++] = 0x0B + param_count * 3;  // len
-          pkt[i++] = 0x6A; pkt[i++] = 0xEE; pkt[i++] = 0xFF;  // src
-          pkt[i++] = 0x35; pkt[i++] = 0x01; pkt[i++] = 0x00;  // flags
-          pkt[i++] = 0xC0; pkt[i++] = 0x13;                    // dst
-          pkt[i++] = 0x00;                                       // seq
-          pkt[i++] = param_count;                                // cmd (param count)
-          for (int j = 0; j < param_count * 3; j++) pkt[i++] = params[j];
+          int pi = 0;
+          pkt[pi++] = 0x32; pkt[pi++] = 0x00;
+          pkt[pi++] = 0x0B + param_count * 3;  // len
+          pkt[pi++] = 0x6A; pkt[pi++] = 0xEE; pkt[pi++] = 0xFF;  // src
+          pkt[pi++] = 0x35; pkt[pi++] = 0x01; pkt[pi++] = 0x00;  // flags
+          pkt[pi++] = 0xC0; pkt[pi++] = 0x13;                    // dst
+          pkt[pi++] = 0x00;                                       // seq
+          pkt[pi++] = param_count;                                // cmd (param count)
+          for (int j = 0; j < param_count * 3; j++) pkt[pi++] = params[j];
           // CRC
           uint16_t crc = 0;
-          for (int j = 0; j < i; j++) crc += pkt[j];
-          pkt[i++] = crc & 0xFF;
-          pkt[i++] = (crc >> 8) & 0xFF;
-          pkt[i++] = 0x34;
-          id(uart_bus).write_array(pkt, i);
+          for (int j = 0; j < pi; j++) crc += pkt[j];
+          pkt[pi++] = crc & 0xFF;
+          pkt[pi++] = (crc >> 8) & 0xFF;
+          pkt[pi++] = 0x34;
+          id(uart_bus).write_array(pkt, pi);
           id(g_power) = power_on;
           ESP_LOGI("erv", "Mode sent: %s", x.c_str());
 
