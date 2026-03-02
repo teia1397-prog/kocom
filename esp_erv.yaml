@@ -1,4 +1,4 @@
-# esp_erv.yaml - CRC 계산 수정
+# esp_erv.yaml - 최소 데이터만 전송
 
 uart:
   id: uart_bus
@@ -77,34 +77,30 @@ switch:
     
     turn_on_action:
       - lambda: |-
-          // 월패드 완전 복제
-          uint8_t pkt[31] = {
-            0x32, 0x00, 0x1D,           // STX, Length
+          // 월패드 방식: 전원만 보내기
+          uint8_t pkt[19] = {
+            0x32, 0x00, 0x11,           // STX, Length=17
             0x6A, 0xEE, 0xFF,           // SA
             0x35, 0x01, 0x00,           // DA
             0xC0,                       // Mode
             (uint8_t)((id(g_seq) >> 8) & 0xFF),
             (uint8_t)(id(g_seq) & 0xFF),  // Seq
-            0x05,                       // 5개 데이터
-            0x41, 0x49, 0x01,          // 전원 ON
-            0x41, 0x47, 0x02,          // 강풍
-            0x40, 0x06, 0x00,
-            0x40, 0x11, 0x00,
-            0x40, 0x60, 0x00,
-            0x00, 0x00,                // CRC 위치
+            0x01,                       // 1개 데이터만!
+            0x41, 0x49, 0x01,          // 전원 ON만
+            0x00, 0x00,                // CRC
             0x34                       // ETX
           };
           
-          // CRC 계산: Length부터 Data 끝까지 (인덱스 1 ~ 27)
+          // CRC 계산
           uint16_t crc = 0x0000;
-          for (int i = 1; i < 28; i++) {  // 1부터 시작!
+          for (int i = 1; i < 16; i++) {
             crc = (crc << 8) ^ id(crc_table)[((crc >> 8) ^ pkt[i]) & 0xFF];
           }
           
-          pkt[28] = (crc >> 8) & 0xFF;
-          pkt[29] = crc & 0xFF;
+          pkt[16] = (crc >> 8) & 0xFF;
+          pkt[17] = crc & 0xFF;
           
-          id(uart_bus).write_array(pkt, 31);
+          id(uart_bus).write_array(pkt, 19);
           id(g_seq) = (id(g_seq) + 1) & 0xFFFF;
           
           ESP_LOGI("erv", "✓ ON sent, Seq=%04X, CRC=%04X", id(g_seq)-1, crc);
@@ -114,32 +110,28 @@ switch:
     
     turn_off_action:
       - lambda: |-
-          uint8_t pkt[31] = {
-            0x32, 0x00, 0x1D,
+          uint8_t pkt[19] = {
+            0x32, 0x00, 0x11,
             0x6A, 0xEE, 0xFF,
             0x35, 0x01, 0x00,
             0xC0,
             (uint8_t)((id(g_seq) >> 8) & 0xFF),
             (uint8_t)(id(g_seq) & 0xFF),
-            0x05,
-            0x41, 0x49, 0x00,          // 전원 OFF
-            0x41, 0x47, 0x02,
-            0x40, 0x06, 0x00,
-            0x40, 0x11, 0x00,
-            0x40, 0x60, 0x00,
+            0x01,
+            0x41, 0x49, 0x00,          // 전원 OFF만
             0x00, 0x00,
             0x34
           };
           
           uint16_t crc = 0x0000;
-          for (int i = 1; i < 28; i++) {  // Length부터!
+          for (int i = 1; i < 16; i++) {
             crc = (crc << 8) ^ id(crc_table)[((crc >> 8) ^ pkt[i]) & 0xFF];
           }
           
-          pkt[28] = (crc >> 8) & 0xFF;
-          pkt[29] = crc & 0xFF;
+          pkt[16] = (crc >> 8) & 0xFF;
+          pkt[17] = crc & 0xFF;
           
-          id(uart_bus).write_array(pkt, 31);
+          id(uart_bus).write_array(pkt, 19);
           id(g_seq) = (id(g_seq) + 1) & 0xFFFF;
           
           ESP_LOGI("erv", "✓ OFF sent, Seq=%04X, CRC=%04X", id(g_seq)-1, crc);
