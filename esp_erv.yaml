@@ -1,6 +1,13 @@
 # ============================================================
 # esp_erv.yaml - 전열교환기 + 천장형 공기청정기 제어
+# uartex 제거 → uart.write 직접 사용
+#
+# 패킷 구조 (월패드 → 기기):
+#   32.00.[len].[src_hi].[src_lo].[flags x3].[dst_hi].[dst_lo].[seq].[cmd].[params...].[crc_lo].[crc_hi].34
+#
+# ESP TX 패킷은 월패드 주소(6A.EE.FF) 대신 임의 주소로 전송
 # ============================================================
+
 uart:
   id: uart_bus
   baud_rate: 9600
@@ -19,29 +26,12 @@ uart:
           ESP_LOGI("uart_debug", "%s: %s",
             direction == uart::UART_DIRECTION_RX ? "RX" : "TX",
             format_hex_pretty(bytes).c_str());
-external_components:
-  - source:
-      type: git
-      url: https://github.com/eigger/espcomponents
-      ref: master
-    components: [uartex]
-    refresh: always
-uartex:
-  rx_timeout: 200ms
-  tx_delay: 300ms
-  tx_timeout: 200ms
-  tx_retry_cnt: 1
-  rx_header: [0xAA, 0x55]
-  rx_footer: [0x0D, 0x0D]
-  tx_header: [0xAA, 0x55]
-  tx_footer: [0x0D, 0x0D]
-  rx_checksum: add_no_header
-  tx_checksum: add_no_header
+
 logger:
   level: DEBUG
   logs:
     uart_debug: DEBUG
-    uartex: DEBUG
+
 globals:
   - id: g_power
     type: bool
@@ -51,12 +41,81 @@ globals:
     type: int
     restore_value: false
     initial_value: '0'
+
 binary_sensor:
   - platform: template
     name: "Air Purifier Linked"
     id: airpurifier_linked
     device_class: running
     lambda: 'return id(g_power);'
+
+# ──────────────────────────────────────────────────────────
+# CRC 계산 함수 (add checksum)
+# 패킷: 32.00.[len].[src x2].[flags x3].[dst x2].[seq].[cmd].[params...].[crc_lo].[crc_hi].34
+# CRC = 전체 바이트 합산 (0x34 제외)
+# ──────────────────────────────────────────────────────────
+# 월패드 실제 패킷 분석:
+#   ON:  32.00.1D.6A.EE.FF.35.01.00.C0.13.[seq].05.41.49.01.41.47.02.40.06.00.40.11.00.40.60.00.[crc_lo].[crc_hi].34
+#   OFF: 32.00.11.6A.EE.FF.35.01.00.C0.13.[seq].01.41.49.00.[crc_lo].[crc_hi].34
+#
+# ESP는 src를 6A.EE.FF 대신 30.BC.00 사용 (기존 방식 유지)
+# ──────────────────────────────────────────────────────────
+
+switch:
+  - platform: template
+    name: "ERV Power"
+    id: erv_power
+    icon: mdi:power
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    turn_on_action:
+      - lambda: |-
+          // Power ON + 스마트환기: 41.49=01, 41.47=02, 40.06=00, 40.11=00, 40.60=00
+          uint8_t pkt[] = {
+            0x32, 0x00, 0x1D,
+            0x6A, 0xEE, 0xFF,   // src: 월패드 주소 그대로
+            0x35, 0x01, 0x00,
+            0xC0, 0x13,          // dst: 공기청정기
+            0x00,                // seq (0으로 고정)
+            0x05,                // param count
+            0x41, 0x49, 0x01,   // 전원 ON
+            0x41, 0x47, 0x02,   // 모드: 스마트환기
+            0x40, 0x06, 0x00,
+            0x40, 0x11, 0x00,
+            0x40, 0x60, 0x00,
+            0x00, 0x00,          // CRC placeholder
+            0x34                 // footer
+          };
+          // CRC 계산 (0x34 앞까지 합산)
+          uint16_t crc = 0;
+          for (int i = 0; i < sizeof(pkt) - 3; i++) crc += pkt[i];
+          pkt[sizeof(pkt)-3] = crc & 0xFF;
+          pkt[sizeof(pkt)-2] = (crc >> 8) & 0xFF;
+          id(uart_bus).write_array(pkt, sizeof(pkt));
+          id(g_power) = true;
+          ESP_LOGI("erv", "Power ON sent");
+    turn_off_action:
+      - lambda: |-
+          // Power OFF: 41.49=00
+          uint8_t pkt[] = {
+            0x32, 0x00, 0x11,
+            0x6A, 0xEE, 0xFF,
+            0x35, 0x01, 0x00,
+            0xC0, 0x13,
+            0x00,
+            0x01,
+            0x41, 0x49, 0x00,
+            0x00, 0x00,
+            0x34
+          };
+          uint16_t crc = 0;
+          for (int i = 0; i < sizeof(pkt) - 3; i++) crc += pkt[i];
+          pkt[sizeof(pkt)-3] = crc & 0xFF;
+          pkt[sizeof(pkt)-2] = (crc >> 8) & 0xFF;
+          id(uart_bus).write_array(pkt, sizeof(pkt));
+          id(g_power) = false;
+          ESP_LOGI("erv", "Power OFF sent");
+
 select:
   - platform: template
     name: "ERV Mode"
@@ -72,90 +131,76 @@ select:
       - "환기"
       - "전열환기"
     on_value:
-      - if:
-          condition:
-            lambda: 'return x == "꺼짐";'
-          then:
-            - uartex.write:
-                data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x01,
-                       0x41, 0x49, 0x00]
-            - globals.set:
-                id: g_power
-                value: 'false'
-            - logger.log: "ERV 모드: 꺼짐"
-      - if:
-          condition:
-            lambda: 'return x == "스마트환기";'
-          then:
-            - uartex.write:
-                data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x05,
-                       0x41, 0x49, 0x01,
-                       0x41, 0x47, 0x02,
-                       0x40, 0x06, 0x00,
-                       0x40, 0x11, 0x00,
-                       0x40, 0x60, 0x00]
-            - globals.set:
-                id: g_power
-                value: 'true'
-            - globals.set:
-                id: g_mode
-                value: '2'
-            - logger.log: "ERV 모드: 스마트환기"
-      - if:
-          condition:
-            lambda: 'return x == "청정";'
-          then:
-            - uartex.write:
-                data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x06,
-                       0x40, 0x07, 0x0A,
-                       0x40, 0x59, 0x01,
-                       0x41, 0x47, 0x02,
-                       0x41, 0x48, 0x0A,
-                       0x41, 0x49, 0x01,
-                       0x43, 0x02, 0x00, 0x00]
-            - globals.set:
-                id: g_power
-                value: 'true'
-            - globals.set:
-                id: g_mode
-                value: '3'
-            - logger.log: "ERV 모드: 청정"
-      - if:
-          condition:
-            lambda: 'return x == "환기";'
-          then:
-            - uartex.write:
-                data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x05,
-                       0x40, 0x06, 0x00,
-                       0x40, 0x11, 0x00,
-                       0x40, 0x60, 0x00,
-                       0x41, 0x47, 0x00,
-                       0x41, 0x49, 0x01]
-            - globals.set:
-                id: g_power
-                value: 'true'
-            - globals.set:
-                id: g_mode
-                value: '0'
-            - logger.log: "ERV 모드: 환기"
-      - if:
-          condition:
-            lambda: 'return x == "전열환기";'
-          then:
-            - uartex.write:
-                data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x05,
-                       0x40, 0x06, 0x00,
-                       0x40, 0x11, 0x00,
-                       0x40, 0x60, 0x00,
-                       0x41, 0x47, 0x01,
-                       0x41, 0x49, 0x01]
-            - globals.set:
-                id: g_power
-                value: 'true'
-            - globals.set:
-                id: g_mode
-                value: '1'
-            - logger.log: "ERV 모드: 전열환기"
+      - lambda: |-
+          uint8_t params[20];
+          uint8_t param_count = 0;
+          bool power_on = true;
+
+          if (x == "꺼짐") {
+            params[0]=0x41; params[1]=0x49; params[2]=0x00;
+            param_count = 1;
+            power_on = false;
+          } else if (x == "스마트환기") {
+            params[0]=0x41; params[1]=0x49; params[2]=0x01;
+            params[3]=0x41; params[4]=0x47; params[5]=0x02;
+            params[6]=0x40; params[7]=0x06; params[8]=0x00;
+            params[9]=0x40; params[10]=0x11; params[11]=0x00;
+            params[12]=0x40; params[13]=0x60; params[14]=0x00;
+            param_count = 5;
+            id(g_mode) = 2;
+          } else if (x == "청정") {
+            params[0]=0x40; params[1]=0x07; params[2]=0x0A;
+            params[3]=0x40; params[4]=0x59; params[5]=0x01;
+            params[6]=0x41; params[7]=0x47; params[8]=0x02;
+            params[9]=0x41; params[10]=0x48; params[11]=0x0A;
+            params[12]=0x41; params[13]=0x49; params[14]=0x01;
+            params[15]=0x43; params[16]=0x02; params[17]=0x00; params[18]=0x00;
+            param_count = 6;
+            id(g_mode) = 3;
+          } else if (x == "환기") {
+            params[0]=0x40; params[1]=0x06; params[2]=0x00;
+            params[3]=0x40; params[4]=0x11; params[5]=0x00;
+            params[6]=0x40; params[7]=0x60; params[8]=0x00;
+            params[9]=0x41; params[10]=0x47; params[11]=0x00;
+            params[12]=0x41; params[13]=0x49; params[14]=0x01;
+            param_count = 5;
+            id(g_mode) = 0;
+          } else if (x == "전열환기") {
+            params[0]=0x40; params[1]=0x06; params[2]=0x00;
+            params[3]=0x40; params[4]=0x11; params[5]=0x00;
+            params[6]=0x40; params[7]=0x60; params[8]=0x00;
+            params[9]=0x41; params[10]=0x47; params[11]=0x01;
+            params[12]=0x41; params[13]=0x49; params[14]=0x01;
+            param_count = 5;
+            id(g_mode) = 1;
+          } else {
+            return;
+          }
+
+          // 패킷 조립
+          uint8_t data_len = 3 + 2 + 1 + 1 + param_count * 3;  // header fields
+          // 전체 패킷: 32.00.[len].src(3).flags(3).dst(2).seq.cmd.params.crc(2).34
+          uint8_t pkt_len = 3 + 3 + 3 + 2 + 1 + 1 + param_count*3 + 2 + 1;
+          uint8_t pkt[64] = {};
+          int i = 0;
+          pkt[i++] = 0x32; pkt[i++] = 0x00;
+          pkt[i++] = 0x0B + param_count * 3;  // len
+          pkt[i++] = 0x6A; pkt[i++] = 0xEE; pkt[i++] = 0xFF;  // src
+          pkt[i++] = 0x35; pkt[i++] = 0x01; pkt[i++] = 0x00;  // flags
+          pkt[i++] = 0xC0; pkt[i++] = 0x13;                    // dst
+          pkt[i++] = 0x00;                                       // seq
+          pkt[i++] = param_count;                                // cmd (param count)
+          for (int j = 0; j < param_count * 3; j++) pkt[i++] = params[j];
+          // CRC
+          uint16_t crc = 0;
+          for (int j = 0; j < i; j++) crc += pkt[j];
+          pkt[i++] = crc & 0xFF;
+          pkt[i++] = (crc >> 8) & 0xFF;
+          pkt[i++] = 0x34;
+          id(uart_bus).write_array(pkt, i);
+          id(g_power) = power_on;
+          ESP_LOGI("erv", "Mode sent: %s", x.c_str());
+
   - platform: template
     name: "ERV Speed"
     id: erv_speed
@@ -169,72 +214,27 @@ select:
       - "약풍"
       - "강풍"
     on_value:
-      - if:
-          condition:
-            lambda: 'return x == "자동";'
-          then:
-            - uartex.write:
-                # 40.06=00 (스마트환기 자동풍량)
-                data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x02,
-                       0x40, 0x06, 0x00,
-                       0x40, 0x07, 0x00]
-            - logger.log: "ERV 속도: 자동"
-      - if:
-          condition:
-            lambda: 'return x == "미풍";'
-          then:
-            - uartex.write:
-                # 40.06=01, 40.07=01
-                data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x02,
-                       0x40, 0x06, 0x01,
-                       0x40, 0x07, 0x01]
-            - logger.log: "ERV 속도: 미풍"
-      - if:
-          condition:
-            lambda: 'return x == "약풍";'
-          then:
-            - uartex.write:
-                # 40.06=02, 40.07=02
-                data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x02,
-                       0x40, 0x06, 0x02,
-                       0x40, 0x07, 0x02]
-            - logger.log: "ERV 속도: 약풍"
-      - if:
-          condition:
-            lambda: 'return x == "강풍";'
-          then:
-            - uartex.write:
-                # 40.06=03, 40.07=03
-                data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x02,
-                       0x40, 0x06, 0x03,
-                       0x40, 0x07, 0x03]
-            - logger.log: "ERV 속도: 강풍"
-switch:
-  - platform: template
-    name: "ERV Power"
-    id: erv_power
-    icon: mdi:power
-    optimistic: true
-    restore_mode: ALWAYS_OFF
-    turn_on_action:
-      - uartex.write:
-          # Power ON + 스마트환기 (기본 모드)
-          data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x05,
-                 0x41, 0x49, 0x01,
-                 0x41, 0x47, 0x02,
-                 0x40, 0x06, 0x00,
-                 0x40, 0x11, 0x00,
-                 0x40, 0x60, 0x00]
-      - globals.set:
-          id: g_power
-          value: 'true'
-      - logger.log: "ERV Power ON"
-    turn_off_action:
-      - uartex.write:
-          # Power OFF
-          data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x01,
-                 0x41, 0x49, 0x00]
-      - globals.set:
-          id: g_power
-          value: 'false'
-      - logger.log: "ERV Power OFF"
+      - lambda: |-
+          uint8_t speed = 0x00;
+          if (x == "미풍") speed = 0x01;
+          else if (x == "약풍") speed = 0x02;
+          else if (x == "강풍") speed = 0x03;
+
+          uint8_t pkt[] = {
+            0x32, 0x00, 0x14,
+            0x6A, 0xEE, 0xFF,
+            0x35, 0x01, 0x00,
+            0xC0, 0x13,
+            0x00,
+            0x02,
+            0x40, 0x06, speed,
+            0x40, 0x07, speed,
+            0x00, 0x00,
+            0x34
+          };
+          uint16_t crc = 0;
+          for (int i = 0; i < sizeof(pkt) - 3; i++) crc += pkt[i];
+          pkt[sizeof(pkt)-3] = crc & 0xFF;
+          pkt[sizeof(pkt)-2] = (crc >> 8) & 0xFF;
+          id(uart_bus).write_array(pkt, sizeof(pkt));
+          ESP_LOGI("erv", "Speed sent: %s (0x%02X)", x.c_str(), speed);
