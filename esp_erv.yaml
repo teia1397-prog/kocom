@@ -346,29 +346,17 @@ fan:
           ESP_LOGI("erv", "팬 OFF 명령 전송");
 
 # =====================================================================
-# Interval - 10초마다 ON 명령 재전송 (CO2 갱신용)
-# ERV가 ON 명령을 받으면 현재 상태+CO2로 30.DC+30.BC 응답
-# Scan(0x3A) 방식은 ACK에서 power=0x00 에코로 팬이 꺼지는 부작용 있음
+# Interval - 10초마다 Scan 조회 (CO2 갱신)
+# Command=0x3A → ERV가 현재 상태+CO2로 30.BC 브로드캐스트 응답
+# Scan ACK(Command=0x3A)는 파서에서 상태 업데이트 스킵 처리됨
 # =====================================================================
 interval:
   - interval: 10s
     then:
       - lambda: |-
-          if (!id(erv_fan_state)) return;  // 꺼진 상태면 스킵
-          if (id(airpurifier_linked).state) return;
-          std::string mode_str = id(erv_mode).current_option();
-          uint8_t mode_byte = 0x01;
-          if (mode_str == "바이패스") mode_byte = 0x03;
-          else if (mode_str == "자동") mode_byte = 0x02;
-          else if (mode_str == "수면") mode_byte = 0x05;
-          uint8_t spd = 0x40;
-          if (id(erv_fan_speed) == 2) spd = 0x80;
-          else if (id(erv_fan_speed) == 3) spd = 0xC0;
-          uint8_t csum = (uint8_t)(0x30+0xBC+0x00+0x48+0x00+0x01+
-                                   0x00+0x00+0x11+mode_byte+spd);
+          // 항상 조회 (켜짐/꺼짐 무관) → 30.BC로 CO2 갱신
           uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
-                           0x00,0x00,0x11,mode_byte,spd,
-                           0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
-          id(erv_co2_poll) = true;   // CO2 갱신 전용 플래그
+                           0x00,0x3A,0x00,0x00,0x00,0x00,0x00,0x00,
+                           0x00,0x00,0x6F,0x0D,0x0D};
           id(uart_bus).write_array(pkt, 21);
-          ESP_LOGI("erv", "CO2 갱신 조회");
+          ESP_LOGI("erv", "CO2 갱신 조회 (Scan)");
