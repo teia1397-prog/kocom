@@ -1,6 +1,3 @@
-# esp_erv.yaml - ERV 전원 제어 (전원 스위치만)
-# NASA CRC: pkt[3:]부터 계산, hi 먼저 lo 나중 저장
-
 uart:
   id: uart_bus
   baud_rate: 9600
@@ -13,82 +10,57 @@ uart:
     direction: BOTH
     dummy_receiver: true
     after:
-      delimiter: [0x34]
+      delimiter: [0x34] # 제어기 패킷 종료 문자에 맞춰 조정 필요
     sequence:
       - lambda: |-
           ESP_LOGI("uart_debug", "%s: %s",
             direction == uart::UART_DIRECTION_RX ? "RX" : "TX",
             format_hex_pretty(bytes).c_str());
 
-logger:
-  level: DEBUG
-  logs:
-    uart_debug: DEBUG
+# HA에 표시될 센서 및 제어 버튼
+sensor:
+  - platform: template
+    name: "ERV Current Speed"
+    id: erv_speed
+    unit_of_measurement: "Step"
+
+switch:
+  - platform: template
+    name: "Samsung Air Purifier ERV Link"
+    id: erv_link_switch
+    turn_on_action:
+      - uart.write: [0xAA, 0x55, 0x01, 0x01, 0x01, 0x00, 0x03] # 실제 ON 패킷으로 교체
+    turn_off_action:
+      - uart.write: [0xAA, 0x55, 0x01, 0x01, 0x00, 0x00, 0x02] # 실제 OFF 패킷으로 교체
+
+# 핵심: 수신 데이터를 처리하는 루틴을 인터벌로 통합
+interval:
+  - interval: 100ms
+    then:
+      - lambda: |-
+          static std::vector<uint8_t> buffer;
+          while (id(uart_bus).available()) {
+            uint8_t b;
+            id(uart_bus).read_byte(&b);
+            buffer.push_back(b);
+
+            // 패킷 분석 (예: 삼성/코콤 프로토콜 규격이 보통 7~10바이트)
+            if (buffer.size() >= 7) {
+              // 헤더 확인 (예: 0xAA 0x55 로 시작한다고 가정)
+              if (buffer[0] == 0xAA && buffer[1] == 0x55) {
+                // [4]번 바이트가 풍량 데이터라면 센서 업데이트
+                id(erv_speed).publish_state(buffer[4]);
+                ESP_LOGD("custom", "ERV Speed Updated: %d", buffer[4]);
+                buffer.clear();
+              } else {
+                buffer.erase(buffer.begin()); // 헤더 찾을때까지 밀기
+              }
+            }
+            if (buffer.size() > 20) buffer.clear(); // 버퍼 넘침 방지
+          }
 
 globals:
   - id: g_seq
     type: int
     restore_value: false
     initial_value: '0'
-
-switch:
-  - platform: template
-    name: "ERV Power"
-    id: erv_power
-    icon: mdi:power
-    optimistic: true
-    restore_mode: ALWAYS_OFF
-    turn_on_action:
-      - lambda: |-
-          // ON: 41.49=01, 41.47=02, 40.06=00, 40.11=00, 40.60=00
-          uint8_t pkt[] = {
-            0x32, 0x00, 0x1D,
-            0x6A, 0xEE, 0xFF, 0x35, 0x01, 0x00,
-            0xC0, 0x13,
-            (uint8_t)(id(g_seq) & 0xFF),
-            0x05,
-            0x41, 0x49, 0x01,
-            0x41, 0x47, 0x02,
-            0x40, 0x06, 0x00,
-            0x40, 0x11, 0x00,
-            0x40, 0x60, 0x00,
-            0x00, 0x00, 0x34
-          };
-          uint16_t crc = 0;
-          for (int ci = 3; ci < (int)sizeof(pkt) - 3; ci++) {
-            crc = ((crc >> 8) | ((crc & 0xFF) << 8)) & 0xFFFF;
-            crc ^= pkt[ci];
-            crc ^= (crc & 0xFF) >> 4;
-            crc ^= (crc << 12) & 0xFFFF;
-            crc ^= ((crc & 0xFF) << 5) & 0xFFFF;
-          }
-          pkt[sizeof(pkt)-3] = (crc >> 8) & 0xFF;  // hi 먼저
-          pkt[sizeof(pkt)-2] = crc & 0xFF;           // lo 나중
-          id(uart_bus).write_array(pkt, sizeof(pkt));
-          id(g_seq) = (id(g_seq) + 1) & 0xFF;
-          ESP_LOGI("erv", "ON sent CRC=%02X %02X", (crc>>8)&0xFF, crc&0xFF);
-    turn_off_action:
-      - lambda: |-
-          // OFF: 41.49=00
-          uint8_t pkt[] = {
-            0x32, 0x00, 0x11,
-            0x6A, 0xEE, 0xFF, 0x35, 0x01, 0x00,
-            0xC0, 0x13,
-            (uint8_t)(id(g_seq) & 0xFF),
-            0x01,
-            0x41, 0x49, 0x00,
-            0x00, 0x00, 0x34
-          };
-          uint16_t crc = 0;
-          for (int ci = 3; ci < (int)sizeof(pkt) - 3; ci++) {
-            crc = ((crc >> 8) | ((crc & 0xFF) << 8)) & 0xFFFF;
-            crc ^= pkt[ci];
-            crc ^= (crc & 0xFF) >> 4;
-            crc ^= (crc << 12) & 0xFFFF;
-            crc ^= ((crc & 0xFF) << 5) & 0xFFFF;
-          }
-          pkt[sizeof(pkt)-3] = (crc >> 8) & 0xFF;
-          pkt[sizeof(pkt)-2] = crc & 0xFF;
-          id(uart_bus).write_array(pkt, sizeof(pkt));
-          id(g_seq) = (id(g_seq) + 1) & 0xFF;
-          ESP_LOGI("erv", "OFF sent CRC=%02X %02X", (crc>>8)&0xFF, crc&0xFF);
