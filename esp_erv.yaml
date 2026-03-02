@@ -70,14 +70,11 @@ uart:
 
             if (pkt_type == 0xDC) {
               // ── ACK 처리 ──
-              // CO2 갱신 조회 중이면 CO2만 파싱하고 상태 업데이트 스킵
-              if (id(erv_co2_poll)) {
-                id(erv_co2_poll) = false;
-                if (co2 > 400) {
-                  float co2_ppm = (float)co2 / 2.5f;
-                  id(erv_co2).publish_state(co2_ppm);
-                  ESP_LOGI("erv", "CO2 갱신: %.0f ppm (raw=%d)", co2_ppm, co2);
-                }
+              // Scan 조회(Command=0x3A) ACK는 상태 업데이트 스킵
+              bool is_scan_ack = (bytes[i+8] == 0x00 && bytes[i+9] == 0x3A);
+              if (is_scan_ack) {
+                ESP_LOGI("uart_debug", "Scan ACK 수신 → 상태 업데이트 스킵");
+                if (co2 > 400) id(erv_co2).publish_state((float)co2 / 2.5f);
                 break;
               }
 
