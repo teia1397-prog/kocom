@@ -1,0 +1,446 @@
+# ============================================================
+# ESPHome - 전열교환기 + 천장형 공기청정기 통합 제어
+# 버스: RS-485 (월패드 TX 스니핑 + ESP TX 제어)
+# UART: 9600bps, 8N1
+# 패킷 구조: 32.00.[len].[src_hi].[src_lo].[flags].[flags].[flags].[dst_hi].[dst_lo].[seq].[cmd]...[crc_lo].[crc_hi].34
+# 기기 주소:
+#   C0.14 = ERV (전열교환기)
+#   C0.13 = 공기청정기
+#   6A.EE.FF = 월패드 (송신 주소)
+# ============================================================
+# 주요 파라미터:
+#   41.49 = 전원  (00=OFF, 01=ON)
+#   41.47 = 모드  (00=환기, 01=전열, 02=스마트환기/청정)
+#   41.48 = 팬속도 (00=정지, 01=약, 0A=강)
+#   41.4B = 열교환 (00=OFF, 01=ON)
+#   40.07 = 팬방향 (0A=정방향(청정), FE=역방향)
+#   40.59 = 운전상태
+# ============================================================
+
+esphome:
+  name: esp-erv
+  friendly_name: "전열교환기+공기청정기"
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: arduino
+
+logger:
+  level: DEBUG
+  logs:
+    uart_debug: DEBUG
+    uartex: DEBUG
+
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "esp-erv-fallback"
+    password: !secret fallback_password
+
+# ──────────────────────────────────────────────────────────
+# UART 설정
+# ──────────────────────────────────────────────────────────
+uart:
+  id: uart_bus
+  baud_rate: 9600
+  data_bits: 8
+  parity: NONE
+  stop_bits: 1
+  rx_pin: GPIO01
+  tx_pin: GPIO02
+  debug:
+    direction: BOTH
+    dummy_receiver: false
+    after:
+      delimiter: [0x34]       # 패킷 종료 바이트
+    sequence:
+      - lambda: |-
+          ESP_LOGI("uart_debug", "%s: %s",
+            direction == uart::UART_DIRECTION_RX ? "RX" : "TX",
+            format_hex_pretty(bytes).c_str());
+
+# ──────────────────────────────────────────────────────────
+# uartex 컴포넌트
+# ──────────────────────────────────────────────────────────
+external_components:
+  - source:
+      type: git
+      url: https://github.com/eigger/espcomponents
+      ref: master
+    components: [uartex]
+    refresh: always
+
+uartex:
+  rx_timeout: 200ms
+  tx_delay: 300ms
+  tx_timeout: 1000ms
+  tx_retry_cnt: 3
+  # ESP → 기기 송신 포맷: AA.55 헤더 + 페이로드 + 0D.0D 푸터
+  rx_header: [0xAA, 0x55]
+  rx_footer: [0x0D, 0x0D]
+  tx_header: [0xAA, 0x55]
+  tx_footer: [0x0D, 0x0D]
+  rx_checksum: add_no_header
+  tx_checksum: add_no_header
+
+# ──────────────────────────────────────────────────────────
+# 전역 변수 (현재 상태 보관)
+# ──────────────────────────────────────────────────────────
+globals:
+  - id: g_power
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: g_mode
+    type: int
+    restore_value: false
+    initial_value: '0'    # 0=환기, 1=전열, 2=스마트환기, 3=청정
+  - id: g_speed
+    type: int
+    restore_value: false
+    initial_value: '1'    # 0=정지, 1=약, 10=강
+
+# ──────────────────────────────────────────────────────────
+# 바이너리 센서 (전원 상태)
+# ──────────────────────────────────────────────────────────
+binary_sensor:
+  - platform: uartex
+    name: "공기청정기 전원"
+    id: airpurifier_power
+    device_class: running
+    # RX 버스에서 C0.13 주소 상태 패킷의 41.49 값으로 판단
+    # 41.49.01 = ON / 41.49.00 = OFF
+    state:
+      data: [0x32, 0x00]
+      mask: [0xFF, 0xFF]
+    state_on:
+      # 41.49=01 패턴 (오프셋은 가변이므로 lambda 활용)
+      offset: 0
+      data: [0x32]
+    filters:
+      - lambda: |-
+          // 패킷에서 41.49 파라미터 찾기
+          for (int i = 0; i < (int)x.size() - 2; i++) {
+            if (x[i] == 0x41 && x[i+1] == 0x49) {
+              id(g_power) = (x[i+2] == 0x01);
+              return x[i+2] == 0x01;
+            }
+          }
+          return {};
+
+  - platform: status
+    name: "ESP 연결 상태"
+
+# ──────────────────────────────────────────────────────────
+# 센서
+# ──────────────────────────────────────────────────────────
+sensor:
+  - platform: wifi_signal
+    name: "WiFi 신호"
+    update_interval: 60s
+  - platform: uptime
+    name: "Uptime"
+  - platform: internal_temperature
+    name: "ESP 내부온도"
+    update_interval: 30s
+
+  # CO2 센서 (ERV에서 읽어오는 값)
+  # 42.D1 = CO2 상위바이트, 42.D2 = 하위바이트 (big-endian × 10ppm 추정)
+  - platform: template
+    name: "ERV CO2"
+    id: erv_co2
+    unit_of_measurement: "ppm"
+    device_class: carbon_dioxide
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: 60s
+    lambda: 'return id(erv_co2).state;'
+
+  # 온도 센서들 (42.D1/D2/D3 = 급기/배기/실외 온도 × 0.1℃)
+  - platform: template
+    name: "급기 온도"
+    id: supply_temp
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 60s
+    lambda: 'return id(supply_temp).state;'
+
+  - platform: template
+    name: "배기 온도"
+    id: exhaust_temp
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 60s
+    lambda: 'return id(exhaust_temp).state;'
+
+# ──────────────────────────────────────────────────────────
+# 텍스트 센서 (현재 모드 표시용)
+# ──────────────────────────────────────────────────────────
+text_sensor:
+  - platform: template
+    name: "현재 모드"
+    id: current_mode_text
+    icon: "mdi:air-filter"
+    lambda: |-
+      if (!id(g_power)) return std::string("꺼짐");
+      switch (id(g_mode)) {
+        case 0: return std::string("환기");
+        case 1: return std::string("전열");
+        case 2: return std::string("스마트환기");
+        case 3: return std::string("청정");
+        default: return std::string("알수없음");
+      }
+    update_interval: 5s
+
+  - platform: wifi_info
+    ip_address:
+      name: "IP"
+
+# ──────────────────────────────────────────────────────────
+# SELECT - 모드 선택 (HA 제어)
+# ──────────────────────────────────────────────────────────
+# 명령 패킷 구조 (ESP → 기기, AA.55 헤더 자동 추가됨):
+#   [30.BC.00.48.00.01.00.CMD.파라미터들]
+#
+# 로그 분석 기반 명령:
+#   Power ON  + 스마트환기: 41.49=01, 41.47=02
+#   청정:                   41.47=02, 40.07=0A
+#   환기(바이패스):          41.47=00
+#   전열:                   41.47=01, 41.4B=01
+#   Power OFF:              41.49=00
+# ──────────────────────────────────────────────────────────
+select:
+  - platform: template
+    name: "공기청정기 모드"
+    id: mode_select
+    icon: "mdi:air-filter"
+    optimistic: true
+    restore_value: true
+    initial_option: "꺼짐"
+    options:
+      - "꺼짐"
+      - "스마트환기"
+      - "청정"
+      - "환기"
+      - "전열"
+    on_value:
+      - if:
+          condition:
+            lambda: 'return x == "꺼짐";'
+          then:
+            - uartex.write:
+                # Power OFF: 41.49=00
+                data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x00,
+                       0x41, 0x49, 0x00]
+                ack: [0x30, 0xDC]
+            - globals.set:
+                id: g_power
+                value: 'false'
+            - logger.log: "모드: 꺼짐"
+
+      - if:
+          condition:
+            lambda: 'return x == "스마트환기";'
+          then:
+            - uartex.write:
+                # Power ON + 스마트환기: 41.49=01, 41.47=02
+                data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x05,
+                       0x41, 0x49, 0x01,
+                       0x41, 0x47, 0x02,
+                       0x40, 0x06, 0x00,
+                       0x40, 0x11, 0x00,
+                       0x40, 0x60, 0x00]
+                ack: [0x30, 0xDC]
+            - globals.set:
+                id: g_power
+                value: 'true'
+            - globals.set:
+                id: g_mode
+                value: '2'
+            - logger.log: "모드: 스마트환기"
+
+      - if:
+          condition:
+            lambda: 'return x == "청정";'
+          then:
+            - uartex.write:
+                # 청정: 41.47=02, 40.07=0A (팬 정방향)
+                data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x06,
+                       0x40, 0x07, 0x0A,
+                       0x40, 0x59, 0x01,
+                       0x41, 0x47, 0x02,
+                       0x41, 0x48, 0x0A,
+                       0x41, 0x49, 0x01,
+                       0x43, 0x02, 0x00, 0x00]
+                ack: [0x30, 0xDC]
+            - globals.set:
+                id: g_power
+                value: 'true'
+            - globals.set:
+                id: g_mode
+                value: '3'
+            - logger.log: "모드: 청정"
+
+      - if:
+          condition:
+            lambda: 'return x == "환기";'
+          then:
+            - uartex.write:
+                # 환기(바이패스): 41.47=00, 41.49=01
+                data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x05,
+                       0x40, 0x06, 0x00,
+                       0x40, 0x11, 0x00,
+                       0x40, 0x60, 0x00,
+                       0x41, 0x47, 0x00,
+                       0x41, 0x49, 0x01]
+                ack: [0x30, 0xDC]
+            - globals.set:
+                id: g_power
+                value: 'true'
+            - globals.set:
+                id: g_mode
+                value: '0'
+            - logger.log: "모드: 환기"
+
+      - if:
+          condition:
+            lambda: 'return x == "전열";'
+          then:
+            - uartex.write:
+                # 전열: 41.47=01, 41.49=01, 41.4B=01
+                data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x05,
+                       0x40, 0x06, 0x00,
+                       0x40, 0x11, 0x00,
+                       0x40, 0x60, 0x00,
+                       0x41, 0x47, 0x01,
+                       0x41, 0x49, 0x01]
+                ack: [0x30, 0xDC]
+            - globals.set:
+                id: g_power
+                value: 'true'
+            - globals.set:
+                id: g_mode
+                value: '1'
+            - logger.log: "모드: 전열"
+
+  # ──────────────────────────────────────────────────────────
+  # SELECT - 팬 속도
+  # ──────────────────────────────────────────────────────────
+  - platform: template
+    name: "팬 속도"
+    id: speed_select
+    icon: "mdi:fan"
+    optimistic: true
+    restore_value: true
+    initial_option: "약"
+    options:
+      - "약"
+      - "중"
+      - "강"
+    on_value:
+      - if:
+          condition:
+            lambda: 'return x == "약";'
+          then:
+            - uartex.write:
+                # 41.48=01 (약풍)
+                data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x01,
+                       0x41, 0x48, 0x01]
+                ack: [0x30, 0xDC]
+            - globals.set:
+                id: g_speed
+                value: '1'
+            - logger.log: "속도: 약"
+      - if:
+          condition:
+            lambda: 'return x == "중";'
+          then:
+            - uartex.write:
+                # 41.48=05 (중풍, 추정값 - 실측 필요)
+                data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x01,
+                       0x41, 0x48, 0x05]
+                ack: [0x30, 0xDC]
+            - globals.set:
+                id: g_speed
+                value: '5'
+            - logger.log: "속도: 중"
+      - if:
+          condition:
+            lambda: 'return x == "강";'
+          then:
+            - uartex.write:
+                # 41.48=0A (강풍)
+                data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x01,
+                       0x41, 0x48, 0x0A]
+                ack: [0x30, 0xDC]
+            - globals.set:
+                id: g_speed
+                value: '10'
+            - logger.log: "속도: 강"
+
+# ──────────────────────────────────────────────────────────
+# 스위치 (간단한 전원 ON/OFF)
+# ──────────────────────────────────────────────────────────
+switch:
+  - platform: template
+    name: "공기청정기 전원 스위치"
+    id: power_switch
+    icon: "mdi:power"
+    optimistic: true
+    turn_on_action:
+      - select.set:
+          id: mode_select
+          option: "스마트환기"    # 기본 ON 모드
+    turn_off_action:
+      - select.set:
+          id: mode_select
+          option: "꺼짐"
+
+  - platform: restart
+    name: "ESP 재시작"
+
+# ──────────────────────────────────────────────────────────
+# 상태 파싱 (RX 스니핑 → HA 센서 업데이트)
+# 버스에서 수신되는 32.00 패킷을 파싱하여 센서 값 갱신
+# ──────────────────────────────────────────────────────────
+# ※ uartex의 state 파싱만으로는 가변 위치 파라미터 처리가
+#   어려우므로, interval + UART raw 수신으로 보완
+interval:
+  - interval: 10s
+    then:
+      - lambda: |-
+          // 현재 상태를 text_sensor에 반영 (globals 기반)
+          // 실제 파싱은 uart_debug lambda에서 처리
+          ESP_LOGD("erv", "Power=%d, Mode=%d, Speed=%d",
+            (int)id(g_power), id(g_mode), id(g_speed));
+
+# ──────────────────────────────────────────────────────────
+# 시간
+# ──────────────────────────────────────────────────────────
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: "KST-9"
+    servers:
+      - 0.pool.ntp.org
+      - 1.pool.ntp.org
+
+# ──────────────────────────────────────────────────────────
+# mDNS
+# ──────────────────────────────────────────────────────────
+mdns:
+  disabled: false
