@@ -1,5 +1,4 @@
-# esp_erv.yaml - 삼성 타사 ERV 프로토콜 기반 제어
-# 문서 p.34-35 참조: RS-485 9600bps, 8N2, CCITT CRC16
+# esp_erv.yaml - 실제 캡처된 프로토콜 기반
 
 uart:
   id: uart_bus
@@ -23,7 +22,6 @@ uart:
 logger:
   level: DEBUG
 
-# CCITT CRC16 테이블 (문서 p.36 전체 테이블)
 globals:
   - id: crc_table
     type: uint16_t[256]
@@ -63,6 +61,11 @@ globals:
         0xEF1F, 0xFF3E, 0xCF5D, 0xDF7C, 0xAF9B, 0xBFBA, 0x8FD9, 0x9FF8,
         0x6E17, 0x7E36, 0x4E55, 0x5E74, 0x2E93, 0x3EB2, 0x0ED1, 0x1EF0
       }
+  
+  - id: g_seq
+    type: uint16_t
+    restore_value: false
+    initial_value: '0x1387'
 
 switch:
   - platform: template
@@ -74,131 +77,102 @@ switch:
     
     turn_on_action:
       - lambda: |-
+          // 실제 월패드 패킷 구조 복제
           uint8_t pkt[] = {
-            0x32, 0x00, 0x0B,  // STX, Length
-            0xD0, 0x00, 0xC0,  // SA, DA, Mode
-            0x01, 0xFF, 0xFF, 0x00,  // 전원ON, 나머지유지
-            0x00, 0x00, 0x34   // CRC, ETX
+            0x32, 0x00, 0x1D,           // STX, Length (29바이트)
+            0x6A, 0xEE, 0xFF,           // SA: 우리 주소
+            0x35, 0x01, 0x00,           // DA: ERV 주소
+            0xC0,                       // Mode: 제어
+            (uint8_t)((id(g_seq) >> 8) & 0xFF),
+            (uint8_t)(id(g_seq) & 0xFF),  // Seq 2바이트
+            0x05,                       // 데이터 개수
+            0x41, 0x49, 0x01,          // 전원 ON
+            0x41, 0x47, 0x02,          // 풍량 (02=강풍)
+            0x40, 0x06, 0x00,          // 기타
+            0x40, 0x11, 0x00,
+            0x40, 0x60, 0x00,
+            0x00, 0x00, 0x34           // CRC, ETX
           };
           
+          // CRC 계산 (SA부터 Data끝까지)
           uint16_t crc = 0x0000;
-          for (int i = 3; i < 10; i++) {
+          for (int i = 3; i < 28; i++) {
             crc = (crc << 8) ^ id(crc_table)[((crc >> 8) ^ pkt[i]) & 0xFF];
           }
           
-          pkt[10] = (crc >> 8) & 0xFF;
-          pkt[11] = crc & 0xFF;
+          pkt[28] = (crc >> 8) & 0xFF;
+          pkt[29] = crc & 0xFF;
           
           id(uart_bus).write_array(pkt, sizeof(pkt));
-          ESP_LOGI("erv", "Power ON, CRC=%04X", crc);
+          id(g_seq) = (id(g_seq) + 1) & 0xFFFF;
+          ESP_LOGI("erv", "Power ON sent, CRC=%04X", crc);
     
     turn_off_action:
       - lambda: |-
           uint8_t pkt[] = {
-            0x32, 0x00, 0x0B,
-            0xD0, 0x00, 0xC0,
-            0x00, 0xFF, 0xFF, 0x00,  // 전원OFF
+            0x32, 0x00, 0x14,           // Length = 20
+            0x6A, 0xEE, 0xFF,
+            0x35, 0x01, 0x00,
+            0xC0,
+            (uint8_t)((id(g_seq) >> 8) & 0xFF),
+            (uint8_t)(id(g_seq) & 0xFF),
+            0x03,                       // 3개 데이터
+            0x41, 0x49, 0x00,          // 전원 OFF
+            0x40, 0x06, 0x00,
+            0x40, 0x11, 0x00,
             0x00, 0x00, 0x34
           };
           
           uint16_t crc = 0x0000;
-          for (int i = 3; i < 10; i++) {
+          for (int i = 3; i < 22; i++) {
             crc = (crc << 8) ^ id(crc_table)[((crc >> 8) ^ pkt[i]) & 0xFF];
           }
           
-          pkt[10] = (crc >> 8) & 0xFF;
-          pkt[11] = crc & 0xFF;
+          pkt[22] = (crc >> 8) & 0xFF;
+          pkt[23] = crc & 0xFF;
           
           id(uart_bus).write_array(pkt, sizeof(pkt));
-          ESP_LOGI("erv", "Power OFF, CRC=%04X", crc);
+          id(g_seq) = (id(g_seq) + 1) & 0xFFFF;
+          ESP_LOGI("erv", "Power OFF sent, CRC=%04X", crc);
 
 select:
-  - platform: template
-    name: "ERV Mode"
-    id: erv_mode
-    icon: mdi:fan
-    optimistic: true
-    options:
-      - "자동"
-      - "전열교환"
-      - "Bypass"
-    initial_option: "자동"
-    set_action:
-      - lambda: |-
-          uint8_t mode_val = 0xFF;
-          if (x == "자동") mode_val = 0x00;
-          else if (x == "전열교환") mode_val = 0x01;
-          else if (x == "Bypass") mode_val = 0x02;
-          
-          uint8_t pkt[] = {
-            0x32, 0x00, 0x0B,
-            0xD0, 0x00, 0xC0,
-            0xFF, mode_val, 0xFF, 0x00,
-            0x00, 0x00, 0x34
-          };
-          
-          uint16_t crc = 0x0000;
-          for (int i = 3; i < 10; i++) {
-            crc = (crc << 8) ^ id(crc_table)[((crc >> 8) ^ pkt[i]) & 0xFF];
-          }
-          pkt[10] = (crc >> 8) & 0xFF;
-          pkt[11] = crc & 0xFF;
-          
-          id(uart_bus).write_array(pkt, sizeof(pkt));
-          ESP_LOGI("erv", "Mode=%s, CRC=%04X", x.c_str(), crc);
-
   - platform: template
     name: "ERV Fan Speed"
     id: erv_fan
     icon: mdi:fan-speed-3
     optimistic: true
     options:
-      - "미풍"
-      - "약풍"
-      - "강풍"
-    initial_option: "약풍"
+      - "약풍"   # 0x01
+      - "강풍"   # 0x02
+      - "터보"   # 0x03 (추측)
+    initial_option: "강풍"
     set_action:
       - lambda: |-
-          uint8_t fan_val = 0x01;
-          if (x == "미풍") fan_val = 0x00;
-          else if (x == "약풍") fan_val = 0x01;
+          uint8_t fan_val = 0x02;
+          if (x == "약풍") fan_val = 0x01;
           else if (x == "강풍") fan_val = 0x02;
+          else if (x == "터보") fan_val = 0x03;
           
           uint8_t pkt[] = {
-            0x32, 0x00, 0x0B,
-            0xD0, 0x00, 0xC0,
-            0xFF, 0xFF, fan_val, 0x00,
+            0x32, 0x00, 0x11,
+            0x6A, 0xEE, 0xFF,
+            0x35, 0x01, 0x00,
+            0xC0,
+            (uint8_t)((id(g_seq) >> 8) & 0xFF),
+            (uint8_t)(id(g_seq) & 0xFF),
+            0x02,
+            0x41, 0x47, fan_val,       // 풍량 제어
+            0x40, 0x06, 0x00,
             0x00, 0x00, 0x34
           };
           
           uint16_t crc = 0x0000;
-          for (int i = 3; i < 10; i++) {
+          for (int i = 3; i < 19; i++) {
             crc = (crc << 8) ^ id(crc_table)[((crc >> 8) ^ pkt[i]) & 0xFF];
           }
-          pkt[10] = (crc >> 8) & 0xFF;
-          pkt[11] = crc & 0xFF;
+          pkt[19] = (crc >> 8) & 0xFF;
+          pkt[20] = crc & 0xFF;
           
           id(uart_bus).write_array(pkt, sizeof(pkt));
-          ESP_LOGI("erv", "Fan=%s, CRC=%04X", x.c_str(), crc);
-
-button:
-  - platform: template
-    name: "ERV Status Query"
-    icon: mdi:update
-    on_press:
-      - lambda: |-
-          uint8_t pkt[] = {
-            0x32, 0x00, 0x08,
-            0xD0, 0x00, 0xB0, 0x00,  // 상태 요청
-            0x00, 0x00, 0x34
-          };
-          
-          uint16_t crc = 0x0000;
-          for (int i = 3; i < 7; i++) {
-            crc = (crc << 8) ^ id(crc_table)[((crc >> 8) ^ pkt[i]) & 0xFF];
-          }
-          pkt[7] = (crc >> 8) & 0xFF;
-          pkt[8] = crc & 0xFF;
-          
-          id(uart_bus).write_array(pkt, sizeof(pkt));
-          ESP_LOGI("erv", "Status query, CRC=%04X", crc);
+          id(g_seq) = (id(g_seq) + 1) & 0xFFFF;
+          ESP_LOGI("erv", "Fan=%s sent, CRC=%04X", x.c_str(), crc);
