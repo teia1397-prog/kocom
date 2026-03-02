@@ -209,3 +209,32 @@ select:
                        0x40, 0x06, 0x03,
                        0x40, 0x07, 0x03]
             - logger.log: "ERV 속도: 강풍"
+switch:
+  - platform: template
+    name: "ERV Power"
+    id: erv_power
+    icon: mdi:power
+    optimistic: true
+    restore_value: false
+    turn_on_action:
+      - uartex.write:
+          # Power ON + 스마트환기 (기본 모드)
+          data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x05,
+                 0x41, 0x49, 0x01,
+                 0x41, 0x47, 0x02,
+                 0x40, 0x06, 0x00,
+                 0x40, 0x11, 0x00,
+                 0x40, 0x60, 0x00]
+      - globals.set:
+          id: g_power
+          value: 'true'
+      - logger.log: "ERV Power ON"
+    turn_off_action:
+      - uartex.write:
+          # Power OFF
+          data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x01,
+                 0x41, 0x49, 0x00]
+      - globals.set:
+          id: g_power
+          value: 'false'
+      - logger.log: "ERV Power OFF"
