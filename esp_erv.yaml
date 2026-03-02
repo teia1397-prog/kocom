@@ -1,41 +1,206 @@
-# USB 연결 및 네트워크 로그 확인용
-logger:
-  level: DEBUG
+# esp_erv.yaml - 삼성 타사 ERV 프로토콜 기반 제어
+# 문서 p.34-35 참조: RS-485 9600bps, 8N2, CCITT CRC16
 
 uart:
   id: uart_bus
   baud_rate: 9600
+  data_bits: 8
+  parity: NONE
+  stop_bits: 2  # 문서에 명시된 대로 2로 변경
   rx_pin: GPIO01
   tx_pin: GPIO02
-  parity: NONE
-  stop_bits: 1
   debug:
     direction: BOTH
     dummy_receiver: true
+    after:
+      delimiter: [0x34]
     sequence:
       - lambda: |-
-          ESP_LOGI("RS485_RAW", "%s: %s", 
-            direction == uart::UART_DIRECTION_RX ? "RX" : "TX", 
+          ESP_LOGI("uart", "%s: %s",
+            direction == uart::UART_DIRECTION_RX ? "RX" : "TX",
             format_hex_pretty(bytes).c_str());
 
-# HA 스위치 설정
-switch:
-  - platform: template
-    name: "Samsung ERV Power"
-    id: erv_power_switch
-    icon: "mdi:fan"
-    # 로그에서 추출한 온/오프 패킷 적용
-    turn_on_action:
-      - uart.write: [0x32, 0x00, 0x11, 0x10, 0x01, 0x00, 0xB0, 0xFF, 0xFF, 0xC0, 0x14, 0x30, 0x01, 0x20, 0x0F, 0x00, 0xC2, 0x8E, 0x34]
-    turn_off_action:
-      - uart.write: [0x32, 0x00, 0x3B, 0x30, 0x01, 0x00, 0xB3, 0x01, 0x1F, 0xC0, 0x14, 0xC0, 0x0D, 0x40, 0x03, 0x00, 0x40, 0x04, 0x01, 0x40, 0x08, 0xFF, 0x40, 0x27, 0x00, 0x02, 0x02, 0x00, 0x00, 0x42, 0x03, 0x7F, 0xFF, 0x40, 0xB7, 0xFF, 0x42, 0xD1, 0xFF, 0xFF, 0x42, 0xD2, 0xFF, 0xFF, 0x42, 0xD3, 0xFF, 0xFF, 0x42, 0x1B, 0x7F, 0xFF, 0x40, 0x3A, 0xFF, 0x41, 0x2D, 0xFF, 0x1B, 0x8D, 0x34]
+logger:
+  level: DEBUG
 
-# 버퍼 비우기 루틴
-interval:
-  - interval: 1s
-    then:
+globals:
+  - id: g_seq
+    type: int
+    restore_value: false
+    initial_value: '0'
+
+switch:
+  # ERV 전원 제어
+  - platform: template
+    name: "ERV Power"
+    id: erv_power
+    icon: mdi:power
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    
+    turn_on_action:
       - lambda: |-
-          while (id(uart_bus).available()) {
-            uint8_t b;
-            id(uart_bus).read_byte(&b);
+          // 제어 프레임: STX(32) LEN SA(D0) DA(00) MODE(C0) DATA CS ETX(34)
+          // 전원 ON: Data1=01, 나머지=FF(유지)
+          uint8_t pkt[] = {
+            0x32,        // STX
+            0x00, 0x0B,  // Length = 11 (전체 길이 - 2)
+            0xD0,        // SA: 시스템 청정환기 제어기
+            0x00,        // DA: ERV
+            0xC0,        // Mode: ERV 제어
+            0x01,        // Data1: 전원 ON
+            0xFF,        // Data2: 운전모드 유지
+            0xFF,        // Data3: 풍량 유지
+            0x00,        // Data4: 필터알람 리셋 안함
+            0x00, 0x00,  // CRC (나중에 계산)
+            0x34         // ETX
+          };
+          
+          // CCITT CRC16 계산 (SA부터 Data까지, p.36 알고리즘 참조)
+          const uint16_t crc_table[256] = {
+            0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50A5, 0x60C6, 0x70E7,
+            0x8108, 0x9129, 0xA14A, 0xB16B, 0xC18C, 0xD1AD, 0xE1CE, 0xF1EF,
+            // ... (전체 테이블은 문서 p.36 참조)
+          };
+          
+          uint16_t crc = 0x0000;
+          for (int i = 3; i < 10; i++) {  // SA부터 Data4까지
+            crc = (crc << 8) ^ crc_table[((crc >> 8) ^ pkt[i]) & 0xFF];
           }
+          
+          pkt[10] = (crc >> 8) & 0xFF;   // CRC 상위
+          pkt[11] = crc & 0xFF;          // CRC 하위
+          
+          id(uart_bus).write_array(pkt, sizeof(pkt));
+          ESP_LOGI("erv", "Power ON sent, CRC=%04X", crc);
+    
+    turn_off_action:
+      - lambda: |-
+          uint8_t pkt[] = {
+            0x32,        // STX
+            0x00, 0x0B,  // Length
+            0xD0,        // SA
+            0x00,        // DA
+            0xC0,        // Mode
+            0x00,        // Data1: 전원 OFF
+            0xFF,        // Data2: 유지
+            0xFF,        // Data3: 유지
+            0x00,        // Data4: 리셋 안함
+            0x00, 0x00,  // CRC
+            0x34         // ETX
+          };
+          
+          uint16_t crc = 0x0000;
+          for (int i = 3; i < 10; i++) {
+            crc = (crc << 8) ^ crc_table[((crc >> 8) ^ pkt[i]) & 0xFF];
+          }
+          
+          pkt[10] = (crc >> 8) & 0xFF;
+          pkt[11] = crc & 0xFF;
+          
+          id(uart_bus).write_array(pkt, sizeof(pkt));
+          ESP_LOGI("erv", "Power OFF sent, CRC=%04X", crc);
+
+# 운전 모드 선택 (문서 p.35 참조)
+select:
+  - platform: template
+    name: "ERV Mode"
+    id: erv_mode
+    icon: mdi:fan
+    optimistic: true
+    options:
+      - "자동"      # 00H
+      - "전열교환"  # 01H
+      - "Bypass"   # 02H
+    initial_option: "자동"
+    set_action:
+      - lambda: |-
+          uint8_t mode_val = 0xFF;
+          if (x == "자동") mode_val = 0x00;
+          else if (x == "전열교환") mode_val = 0x01;
+          else if (x == "Bypass") mode_val = 0x02;
+          
+          uint8_t pkt[] = {
+            0x32, 0x00, 0x0B,
+            0xD0, 0x00, 0xC0,
+            0xFF,        // 전원 유지
+            mode_val,    // 운전 모드
+            0xFF,        // 풍량 유지
+            0x00,
+            0x00, 0x00, 0x34
+          };
+          
+          // CRC 계산 (동일 방식)
+          uint16_t crc = 0x0000;
+          for (int i = 3; i < 10; i++) {
+            crc = (crc << 8) ^ crc_table[((crc >> 8) ^ pkt[i]) & 0xFF];
+          }
+          pkt[10] = (crc >> 8) & 0xFF;
+          pkt[11] = crc & 0xFF;
+          
+          id(uart_bus).write_array(pkt, sizeof(pkt));
+          ESP_LOGI("erv", "Mode=%s sent", x.c_str());
+
+# 풍량 선택
+  - platform: template
+    name: "ERV Fan Speed"
+    id: erv_fan
+    icon: mdi:fan-speed-3
+    optimistic: true
+    options:
+      - "미풍"  # 00H (1단계)
+      - "약풍"  # 01H (2단계)
+      - "강풍"  # 02H (3단계)
+    initial_option: "약풍"
+    set_action:
+      - lambda: |-
+          uint8_t fan_val = 0x01;
+          if (x == "미풍") fan_val = 0x00;
+          else if (x == "약풍") fan_val = 0x01;
+          else if (x == "강풍") fan_val = 0x02;
+          
+          uint8_t pkt[] = {
+            0x32, 0x00, 0x0B,
+            0xD0, 0x00, 0xC0,
+            0xFF, 0xFF,  // 전원, 모드 유지
+            fan_val,     // 풍량
+            0x00,
+            0x00, 0x00, 0x34
+          };
+          
+          uint16_t crc = 0x0000;
+          for (int i = 3; i < 10; i++) {
+            crc = (crc << 8) ^ crc_table[((crc >> 8) ^ pkt[i]) & 0xFF];
+          }
+          pkt[10] = (crc >> 8) & 0xFF;
+          pkt[11] = crc & 0xFF;
+          
+          id(uart_bus).write_array(pkt, sizeof(pkt));
+          ESP_LOGI("erv", "Fan=%s sent", x.c_str());
+
+# 상태 모니터링 (문서 p.34 참조)
+button:
+  - platform: template
+    name: "ERV Status Query"
+    icon: mdi:update
+    on_press:
+      - lambda: |-
+          // 상태 요청: Mode=B0H
+          uint8_t pkt[] = {
+            0x32, 0x00, 0x08,
+            0xD0,        // SA: 제어기
+            0x00,        // DA: ERV
+            0xB0,        // Mode: 모니터링
+            0x00,        // Data1: Frame type
+            0x00, 0x00, 0x34
+          };
+          
+          uint16_t crc = 0x0000;
+          for (int i = 3; i < 7; i++) {
+            crc = (crc << 8) ^ crc_table[((crc >> 8) ^ pkt[i]) & 0xFF];
+          }
+          pkt[7] = (crc >> 8) & 0xFF;
+          pkt[8] = crc & 0xFF;
+          
+          id(uart_bus).write_array(pkt, sizeof(pkt));
+          ESP_LOGI("erv", "Status query sent");
