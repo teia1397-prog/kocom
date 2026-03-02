@@ -59,14 +59,14 @@ globals:
 
 binary_sensor:
   - platform: template
-    name: "공기청정기 연동"
+    name: "Air Purifier Linked"
     id: airpurifier_linked
     device_class: running
     lambda: 'return id(g_power);'
 
 select:
   - platform: template
-    name: "ERV 모드"
+    name: "ERV Mode"
     id: erv_mode
     icon: mdi:air-filter
     optimistic: true
@@ -174,7 +174,7 @@ select:
             - logger.log: "ERV 모드: 전열환기"
 
   - platform: template
-    name: "ERV 속도"
+    name: "ERV Speed"
     id: erv_speed
     icon: mdi:fan-speed-1
     optimistic: true
