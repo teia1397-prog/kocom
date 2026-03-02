@@ -1,4 +1,4 @@
-# esp_erv.yaml - 실제 캡처된 프로토콜 기반
+# esp_erv.yaml - 완전한 속성 세트로 제어
 
 uart:
   id: uart_bus
@@ -66,113 +66,156 @@ globals:
     type: uint16_t
     restore_value: false
     initial_value: '0x1387'
+  
+  # 현재 상태 저장
+  - id: g_power
+    type: bool
+    restore_value: true
+    initial_value: 'false'
+  
+  - id: g_fan_speed
+    type: uint8_t
+    restore_value: true
+    initial_value: '0x02'  # 기본 강풍
 
 switch:
   - platform: template
     name: "ERV Power"
     id: erv_power
     icon: mdi:power
-    optimistic: true
-    restore_mode: ALWAYS_OFF
+    optimistic: false
+    restore_mode: RESTORE_DEFAULT_OFF
     
     turn_on_action:
+      - globals.set:
+          id: g_power
+          value: 'true'
       - lambda: |-
-          // 실제 월패드 패킷 구조 복제
+          // 월패드 방식: 5개 속성 모두 전송
           uint8_t pkt[] = {
-            0x32, 0x00, 0x1D,           // STX, Length (29바이트)
-            0x6A, 0xEE, 0xFF,           // SA: 우리 주소
-            0x35, 0x01, 0x00,           // DA: ERV 주소
-            0xC0,                       // Mode: 제어
-            (uint8_t)((id(g_seq) >> 8) & 0xFF),
-            (uint8_t)(id(g_seq) & 0xFF),  // Seq 2바이트
-            0x05,                       // 데이터 개수
-            0x41, 0x49, 0x01,          // 전원 ON
-            0x41, 0x47, 0x02,          // 풍량 (02=강풍)
-            0x40, 0x06, 0x00,          // 기타
-            0x40, 0x11, 0x00,
-            0x40, 0x60, 0x00,
-            0x00, 0x00, 0x34           // CRC, ETX
-          };
-          
-          // CRC 계산 (SA부터 Data끝까지)
-          uint16_t crc = 0x0000;
-          for (int i = 3; i < 28; i++) {
-            crc = (crc << 8) ^ id(crc_table)[((crc >> 8) ^ pkt[i]) & 0xFF];
-          }
-          
-          pkt[28] = (crc >> 8) & 0xFF;
-          pkt[29] = crc & 0xFF;
-          
-          id(uart_bus).write_array(pkt, sizeof(pkt));
-          id(g_seq) = (id(g_seq) + 1) & 0xFFFF;
-          ESP_LOGI("erv", "Power ON sent, CRC=%04X", crc);
-    
-    turn_off_action:
-      - lambda: |-
-          uint8_t pkt[] = {
-            0x32, 0x00, 0x14,           // Length = 20
+            0x32, 0x00, 0x1D,
             0x6A, 0xEE, 0xFF,
             0x35, 0x01, 0x00,
             0xC0,
             (uint8_t)((id(g_seq) >> 8) & 0xFF),
             (uint8_t)(id(g_seq) & 0xFF),
-            0x03,                       // 3개 데이터
-            0x41, 0x49, 0x00,          // 전원 OFF
+            0x05,                       // 5개 속성
+            0x41, 0x49, 0x01,          // 전원 ON
+            0x41, 0x47, id(g_fan_speed), // 현재 풍량
             0x40, 0x06, 0x00,
             0x40, 0x11, 0x00,
+            0x40, 0x60, 0x00,
             0x00, 0x00, 0x34
           };
           
           uint16_t crc = 0x0000;
-          for (int i = 3; i < 22; i++) {
+          for (int i = 3; i < 28; i++) {
             crc = (crc << 8) ^ id(crc_table)[((crc >> 8) ^ pkt[i]) & 0xFF];
           }
-          
-          pkt[22] = (crc >> 8) & 0xFF;
-          pkt[23] = crc & 0xFF;
+          pkt[28] = (crc >> 8) & 0xFF;
+          pkt[29] = crc & 0xFF;
           
           id(uart_bus).write_array(pkt, sizeof(pkt));
           id(g_seq) = (id(g_seq) + 1) & 0xFFFF;
-          ESP_LOGI("erv", "Power OFF sent, CRC=%04X", crc);
+          
+          ESP_LOGI("erv", "✓ Power ON + Fan=%d sent", id(g_fan_speed));
+      - delay: 500ms
+      - lambda: |-
+          id(erv_power).publish_state(true);
+    
+    turn_off_action:
+      - globals.set:
+          id: g_power
+          value: 'false'
+      - lambda: |-
+          // OFF도 5개 속성 전송
+          uint8_t pkt[] = {
+            0x32, 0x00, 0x1D,
+            0x6A, 0xEE, 0xFF,
+            0x35, 0x01, 0x00,
+            0xC0,
+            (uint8_t)((id(g_seq) >> 8) & 0xFF),
+            (uint8_t)(id(g_seq) & 0xFF),
+            0x05,
+            0x41, 0x49, 0x00,          // 전원 OFF
+            0x41, 0x47, id(g_fan_speed),
+            0x40, 0x06, 0x00,
+            0x40, 0x11, 0x00,
+            0x40, 0x60, 0x00,
+            0x00, 0x00, 0x34
+          };
+          
+          uint16_t crc = 0x0000;
+          for (int i = 3; i < 28; i++) {
+            crc = (crc << 8) ^ id(crc_table)[((crc >> 8) ^ pkt[i]) & 0xFF];
+          }
+          pkt[28] = (crc >> 8) & 0xFF;
+          pkt[29] = crc & 0xFF;
+          
+          id(uart_bus).write_array(pkt, sizeof(pkt));
+          id(g_seq) = (id(g_seq) + 1) & 0xFFFF;
+          
+          ESP_LOGI("erv", "✓ Power OFF sent");
+      - delay: 500ms
+      - lambda: |-
+          id(erv_power).publish_state(false);
 
 select:
   - platform: template
     name: "ERV Fan Speed"
     id: erv_fan
     icon: mdi:fan-speed-3
-    optimistic: true
+    optimistic: false
     options:
       - "약풍"   # 0x01
       - "강풍"   # 0x02
-      - "터보"   # 0x03 (추측)
     initial_option: "강풍"
     set_action:
       - lambda: |-
           uint8_t fan_val = 0x02;
           if (x == "약풍") fan_val = 0x01;
           else if (x == "강풍") fan_val = 0x02;
-          else if (x == "터보") fan_val = 0x03;
           
-          uint8_t pkt[] = {
-            0x32, 0x00, 0x11,
-            0x6A, 0xEE, 0xFF,
-            0x35, 0x01, 0x00,
-            0xC0,
-            (uint8_t)((id(g_seq) >> 8) & 0xFF),
-            (uint8_t)(id(g_seq) & 0xFF),
-            0x02,
-            0x41, 0x47, fan_val,       // 풍량 제어
-            0x40, 0x06, 0x00,
-            0x00, 0x00, 0x34
-          };
+          id(g_fan_speed) = fan_val;
           
-          uint16_t crc = 0x0000;
-          for (int i = 3; i < 19; i++) {
-            crc = (crc << 8) ^ id(crc_table)[((crc >> 8) ^ pkt[i]) & 0xFF];
+          // 전원이 켜져있을 때만 풍량 변경
+          if (id(g_power)) {
+            uint8_t pkt[] = {
+              0x32, 0x00, 0x1D,
+              0x6A, 0xEE, 0xFF,
+              0x35, 0x01, 0x00,
+              0xC0,
+              (uint8_t)((id(g_seq) >> 8) & 0xFF),
+              (uint8_t)(id(g_seq) & 0xFF),
+              0x05,
+              0x41, 0x49, 0x01,          // 전원 유지 ON
+              0x41, 0x47, fan_val,       // 풍량 변경
+              0x40, 0x06, 0x00,
+              0x40, 0x11, 0x00,
+              0x40, 0x60, 0x00,
+              0x00, 0x00, 0x34
+            };
+            
+            uint16_t crc = 0x0000;
+            for (int i = 3; i < 28; i++) {
+              crc = (crc << 8) ^ id(crc_table)[((crc >> 8) ^ pkt[i]) & 0xFF];
+            }
+            pkt[28] = (crc >> 8) & 0xFF;
+            pkt[29] = crc & 0xFF;
+            
+            id(uart_bus).write_array(pkt, sizeof(pkt));
+            id(g_seq) = (id(g_seq) + 1) & 0xFFFF;
+            
+            ESP_LOGI("erv", "✓ Fan speed=%s sent", x.c_str());
+          } else {
+            ESP_LOGW("erv", "! Power is OFF, fan change saved for next ON");
           }
-          pkt[19] = (crc >> 8) & 0xFF;
-          pkt[20] = crc & 0xFF;
           
-          id(uart_bus).write_array(pkt, sizeof(pkt));
-          id(g_seq) = (id(g_seq) + 1) & 0xFFFF;
-          ESP_LOGI("erv", "Fan=%s sent, CRC=%04X", x.c_str(), crc);
+          id(erv_fan).publish_state(x);
+
+sensor:
+  - platform: template
+    name: "ERV Status"
+    id: erv_status
+    icon: mdi:information-outline
+    update_interval: never
