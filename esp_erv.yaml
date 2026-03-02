@@ -120,8 +120,10 @@ uart:
               // 재기동 감지: 켜져있어야 하는데 꺼짐 브로드캐스트 수신 → 재기동
               // erv_ack_consumed=false (명령 대기 중)이면 무시 (모드전환 후 ERV 자동 브로드캐스트)
               bool cooldown_ok = (millis() - id(erv_last_restart_at) > 10000);
+              bool scan_cooldown = (millis() - id(erv_scan_sent_ms)) > 2000;
               if (id(erv_fan_state) && !is_on && cooldown_ok
-                  && id(erv_ack_consumed) && !id(airpurifier_linked).state) {
+                  && id(erv_ack_consumed) && !id(airpurifier_linked).state
+                  && scan_cooldown) {
                 ESP_LOGI("erv", "ERV 꺼짐 감지(브로드캐스트) → 재기동");
                 id(erv_last_restart_at) = millis();
                 std::string mode_str = id(erv_mode).current_option();
@@ -194,11 +196,10 @@ globals:
     type: uint32_t
     restore_value: false
     initial_value: '0'
-  # CO2 갱신 조회 중 → ACK에서 상태 업데이트 스킵, CO2만 파싱
-  - id: erv_co2_poll
-    type: bool
+  - id: erv_scan_sent_ms
+    type: uint32_t
     restore_value: false
-    initial_value: 'false'
+    initial_value: '0'  # Scan 전송 시각, 2초간 재기동 억제용
 
 binary_sensor:
   - platform: template
@@ -358,5 +359,6 @@ interval:
           uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
                            0x00,0x3A,0x00,0x00,0x00,0x00,0x00,0x00,
                            0x00,0x00,0x6F,0x0D,0x0D};
+          id(erv_scan_sent_ms) = millis();  // Scan 시각 저장 → 2초간 재기동 억제
           id(uart_bus).write_array(pkt, 21);
           ESP_LOGI("erv", "CO2 갱신 조회 (Scan)");
