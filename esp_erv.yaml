@@ -215,7 +215,7 @@ switch:
     id: erv_power
     icon: mdi:power
     optimistic: true
-    restore_value: false
+    restore_mode: ALWAYS_OFF
     turn_on_action:
       - uartex.write:
           # Power ON + 스마트환기 (기본 모드)
