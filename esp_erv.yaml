@@ -109,6 +109,26 @@ uart:
 
             } else {
               // ── 브로드캐스트(30.BC) 처리 ──
+
+              // 부팅 후 첫 브로드캐스트: 실제 ERV 상태를 HA에 반영
+              if (!id(erv_initialized)) {
+                id(erv_initialized) = true;
+                id(erv_fan_state) = is_on;
+                id(erv_updating_from_ack) = true;
+                id(erv_fan).state = is_on; id(erv_fan).publish_state();
+                if (is_on) {
+                  if (speed == 0x40) { id(erv_fan_speed) = 1; id(erv_speed_number).publish_state(1); }
+                  else if (speed == 0x80) { id(erv_fan_speed) = 2; id(erv_speed_number).publish_state(2); }
+                  else if (speed == 0xC0) { id(erv_fan_speed) = 3; id(erv_speed_number).publish_state(3); }
+                  if      (mode == 0x01) id(erv_mode).publish_state("전열환기");
+                  else if (mode == 0x02) id(erv_mode).publish_state("자동");
+                  else if (mode == 0x03) id(erv_mode).publish_state("바이패스");
+                  else if (mode == 0x05) id(erv_mode).publish_state("수면");
+                }
+                id(erv_updating_from_ack) = false;
+                ESP_LOGI("erv", "부팅 초기화: ERV %s", is_on ? "ON" : "OFF");
+              }
+
               // CO2 실시간 업데이트 (on/off 무관)
               if (co2 > 400) {
                 id(erv_co2).publish_state((float)co2 / 2.5f);
@@ -197,6 +217,10 @@ globals:
     type: uint32_t
     restore_value: false
     initial_value: '0'  # Scan 전송 시각, 2초간 재기동 억제용
+  - id: erv_initialized
+    type: bool
+    restore_value: false
+    initial_value: 'false'  # 부팅 후 첫 브로드캐스트로 실제 상태 반영 완료 여부
 
 binary_sensor:
   - platform: template
