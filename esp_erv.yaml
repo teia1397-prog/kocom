@@ -1,24 +1,7 @@
 # ============================================================
-# esp_erv.yaml - 전열교환기 + 천장형 공기청정기 통합 패키지
-# ※ device_base.yaml / esp32.yaml 과 함께 로드되는 패키지
-#   (wifi / api / ota / board 설정은 다른 패키지에 있음)
-#
-# RS-485 버스 구조:
-#   월패드 TX ──▶ ESP RX (스니핑 + 제어)
-#   기기 주소: C0.14 = ERV,  C0.13 = 공기청정기
-#   월패드:    6A.EE.FF
-#
-# 핵심 파라미터:
-#   41.49 = 전원      00=OFF  01=ON
-#   41.47 = 모드      00=환기  01=전열  02=스마트환기/청정
-#   41.48 = 팬속도    01=약   05=중(추정) 0A=강
-#   41.4B = 열교환    00=OFF  01=ON
-#   40.07 = 팬방향    0A=정방향(청정)  FE=역방향
+# esp_erv.yaml - 전열교환기 + 천장형 공기청정기 제어
 # ============================================================
 
-# ──────────────────────────────────────────────────────────
-# UART
-# ──────────────────────────────────────────────────────────
 uart:
   id: uart_bus
   baud_rate: 9600
@@ -38,9 +21,6 @@ uart:
             direction == uart::UART_DIRECTION_RX ? "RX" : "TX",
             format_hex_pretty(bytes).c_str());
 
-# ──────────────────────────────────────────────────────────
-# uartex
-# ──────────────────────────────────────────────────────────
 external_components:
   - source:
       type: git
@@ -61,9 +41,12 @@ uartex:
   rx_checksum: add_no_header
   tx_checksum: add_no_header
 
-# ──────────────────────────────────────────────────────────
-# 전역 변수
-# ──────────────────────────────────────────────────────────
+logger:
+  level: DEBUG
+  logs:
+    uart_debug: DEBUG
+    uartex: DEBUG
+
 globals:
   - id: g_power
     type: bool
@@ -74,85 +57,13 @@ globals:
     restore_value: false
     initial_value: '0'
 
-# ──────────────────────────────────────────────────────────
-# 센서
-# ──────────────────────────────────────────────────────────
-sensor:
-  - platform: wifi_signal
-    name: "WiFi signal"
-    id: wifi_signal_sensor
-    update_interval: 60s
-
-  - platform: uptime
-    name: "Uptime"
-    type: timestamp
-    icon: mdi:timer-outline
-
-  - platform: internal_temperature
-    name: "Internal Temperature"
-    update_interval: 30s
-
-  - platform: template
-    name: "ERV CO2"
-    id: erv_co2
-    unit_of_measurement: "ppm"
-    device_class: carbon_dioxide
-    state_class: measurement
-    accuracy_decimals: 0
-    icon: mdi:molecule-co2
-    update_interval: 60s
-    lambda: 'return id(erv_co2).state;'
-
-  - platform: template
-    name: "WiFi Quality"
-    unit_of_measurement: "%"
-    state_class: measurement
-    icon: mdi:wifi
-    update_interval: 60s
-    lambda: |-
-      if (id(wifi_signal_sensor).has_state()) {
-        float rssi = id(wifi_signal_sensor).state;
-        if (rssi <= -100) return 0.0f;
-        if (rssi >= -50)  return 100.0f;
-        return 2.0f * (rssi + 100.0f);
-      }
-      return {};
-
-# ──────────────────────────────────────────────────────────
-# 바이너리 센서
-# ──────────────────────────────────────────────────────────
 binary_sensor:
-  - platform: status
-    name: "Status"
-
   - platform: template
     name: "공기청정기 연동"
     id: airpurifier_linked
     device_class: running
     lambda: 'return id(g_power);'
 
-# ──────────────────────────────────────────────────────────
-# 텍스트 센서
-# ──────────────────────────────────────────────────────────
-text_sensor:
-  - platform: template
-    name: "현재 모드"
-    id: current_mode_text
-    icon: mdi:air-filter
-    update_interval: 5s
-    lambda: |-
-      if (!id(g_power)) return std::string("꺼짐");
-      switch (id(g_mode)) {
-        case 0: return std::string("환기");
-        case 1: return std::string("전열");
-        case 2: return std::string("스마트환기");
-        case 3: return std::string("청정");
-        default: return std::string("알수없음");
-      }
-
-# ──────────────────────────────────────────────────────────
-# SELECT - 모드
-# ──────────────────────────────────────────────────────────
 select:
   - platform: template
     name: "ERV 모드"
@@ -186,7 +97,6 @@ select:
             lambda: 'return x == "스마트환기";'
           then:
             - uartex.write:
-                # 41.49=01(ON), 41.47=02, 40.06=00, 40.11=00, 40.60=00
                 data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x05,
                        0x41, 0x49, 0x01,
                        0x41, 0x47, 0x02,
@@ -207,7 +117,6 @@ select:
             lambda: 'return x == "청정";'
           then:
             - uartex.write:
-                # 41.47=02, 40.07=0A(팬 정방향), 41.48=0A, 41.49=01
                 data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x06,
                        0x40, 0x07, 0x0A,
                        0x40, 0x59, 0x01,
@@ -229,7 +138,6 @@ select:
             lambda: 'return x == "환기";'
           then:
             - uartex.write:
-                # 41.47=00(환기/바이패스), 41.49=01
                 data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x05,
                        0x40, 0x06, 0x00,
                        0x40, 0x11, 0x00,
@@ -250,7 +158,6 @@ select:
             lambda: 'return x == "전열환기";'
           then:
             - uartex.write:
-                # 41.47=01(전열), 41.49=01
                 data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x05,
                        0x40, 0x06, 0x00,
                        0x40, 0x11, 0x00,
@@ -266,9 +173,6 @@ select:
                 value: '1'
             - logger.log: "ERV 모드: 전열환기"
 
-  # ──────────────────────────────────────────────────────────
-  # SELECT - 팬 속도
-  # ──────────────────────────────────────────────────────────
   - platform: template
     name: "ERV 속도"
     id: erv_speed
@@ -295,11 +199,11 @@ select:
             lambda: 'return x == "중";'
           then:
             - uartex.write:
-                # ⚠️ 중간 속도값은 추정 (월패드에서 중 조작 후 로그로 확인 필요)
+                # ⚠️ 추정값 - 월패드 중속 조작 후 로그 확인 필요
                 data: [0x30, 0xBC, 0x00, 0x48, 0x00, 0x01, 0x00, 0x01,
                        0x41, 0x48, 0x05]
                 ack: [0x30, 0xDC]
-            - logger.log: "ERV 속도: 중 (추정값 0x05 - 검증 필요)"
+            - logger.log: "ERV 속도: 중"
       - if:
           condition:
             lambda: 'return x == "강";'
@@ -309,27 +213,3 @@ select:
                        0x41, 0x48, 0x0A]
                 ack: [0x30, 0xDC]
             - logger.log: "ERV 속도: 강"
-
-# ──────────────────────────────────────────────────────────
-# 스위치
-# ──────────────────────────────────────────────────────────
-switch:
-  - platform: restart
-    name: "Restart"
-    icon: mdi:restart
-
-  - platform: safe_mode
-    name: "Restart Safemode"
-    icon: mdi:restart-alert
-
-# ──────────────────────────────────────────────────────────
-# 시간
-# ──────────────────────────────────────────────────────────
-time:
-  - platform: sntp
-    id: sntp_time
-    timezone: "KST-9"
-    servers:
-      - 0.pool.ntp.org
-      - 1.pool.ntp.org
-      - 2.pool.ntp.org
