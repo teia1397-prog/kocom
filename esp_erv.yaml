@@ -1,41 +1,52 @@
+# 기본 설정
+esphome:
+  name: m5stack-erv-controller
+
+esp32:
+  board: m5stack-core-esp32 # 사용하시는 M5Stack 모델에 맞게 수정 (core2 등)
+
+# UART 설정: 로그 확인을 위해 debug 모드 활성화
 uart:
   id: uart_bus
   baud_rate: 9600
-  data_bits: 8
-  parity: NONE
-  stop_bits: 1
   rx_pin: GPIO01
   tx_pin: GPIO02
+  parity: NONE
+  stop_bits: 1
   debug:
     direction: BOTH
     dummy_receiver: true
-    after:
-      delimiter: [0x34] # 제어기 패킷 종료 문자에 맞춰 조정 필요
+    # 특정 구분자 없이 모든 데이터를 헥사(Hex)로 찍어서 분석하기 위함
     sequence:
       - lambda: |-
-          ESP_LOGI("uart_debug", "%s: %s",
-            direction == uart::UART_DIRECTION_RX ? "RX" : "TX",
+          ESP_LOGI("RS485_RAW", "%s: %s", 
+            direction == uart::UART_DIRECTION_RX ? "RX" : "TX", 
             format_hex_pretty(bytes).c_str());
 
-# HA에 표시될 센서 및 제어 버튼
-sensor:
-  - platform: template
-    name: "ERV Current Speed"
-    id: erv_speed
-    unit_of_measurement: "Step"
+logger:
+  level: DEBUG
 
+# 전역 변수 (시퀀스 번호 등 관리용)
+globals:
+  - id: g_seq
+    type: int
+    restore_value: false
+    initial_value: '0'
+
+# HA에서 조작할 스위치 (패킷 값은 로그 분석 후 수정 필요)
 switch:
   - platform: template
-    name: "Samsung Air Purifier ERV Link"
-    id: erv_link_switch
+    name: "Samsung ERV Power"
+    id: erv_power_switch
+    icon: "mdi:fan"
     turn_on_action:
-      - uart.write: [0xAA, 0x55, 0x01, 0x01, 0x01, 0x00, 0x03] # 실제 ON 패킷으로 교체
+      - uart.write: [0x02, 0x01, 0x01, 0x01, 0x00, 0x00, 0x03] # 예시: 실제 패킷으로 교체 필요
     turn_off_action:
-      - uart.write: [0xAA, 0x55, 0x01, 0x01, 0x00, 0x00, 0x02] # 실제 OFF 패킷으로 교체
+      - uart.write: [0x02, 0x01, 0x01, 0x00, 0x00, 0x00, 0x02] # 예시: 실제 패킷으로 교체 필요
 
-# 핵심: 수신 데이터를 처리하는 루틴을 인터벌로 통합
+# 수신 데이터 파싱 및 센서 업데이트
 interval:
-  - interval: 100ms
+  - interval: 500ms
     then:
       - lambda: |-
           static std::vector<uint8_t> buffer;
@@ -43,24 +54,26 @@ interval:
             uint8_t b;
             id(uart_bus).read_byte(&b);
             buffer.push_back(b);
-
-            // 패킷 분석 (예: 삼성/코콤 프로토콜 규격이 보통 7~10바이트)
+            
+            // 패킷이 들어오면 로그에 기록 (이미 uart debug에서 처리 중)
+            
+            // 예시 파싱 로직 (패킷 길이가 7바이트 이상일 때)
             if (buffer.size() >= 7) {
-              // 헤더 확인 (예: 0xAA 0x55 로 시작한다고 가정)
-              if (buffer[0] == 0xAA && buffer[1] == 0x55) {
-                // [4]번 바이트가 풍량 데이터라면 센서 업데이트
-                id(erv_speed).publish_state(buffer[4]);
-                ESP_LOGD("custom", "ERV Speed Updated: %d", buffer[4]);
+              // 삼성/코콤 규격에 맞춰 시작 바이트(예: 0x02 또는 0xAA) 확인
+              if (buffer[0] == 0x02) { 
+                ESP_LOGD("Parsing", "Valid Packet Start Detected");
+                // 여기에 센서 업데이트 로직 추가 가능
                 buffer.clear();
               } else {
-                buffer.erase(buffer.begin()); // 헤더 찾을때까지 밀기
+                buffer.erase(buffer.begin());
               }
             }
-            if (buffer.size() > 20) buffer.clear(); // 버퍼 넘침 방지
+            if (buffer.size() > 32) buffer.clear(); // 버퍼 넘침 방지
           }
 
-globals:
-  - id: g_seq
-    type: int
-    restore_value: false
-    initial_value: '0'
+# HA에 현재 상태를 보여줄 센서 (선택 사항)
+sensor:
+  - platform: template
+    name: "ERV Status Raw"
+    id: erv_status_raw
+    lambda: 'return 0;' # 파싱 로직 완성 후 연결
