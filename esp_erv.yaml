@@ -135,11 +135,6 @@ binary_sensor:
 # 텍스트 센서
 # ──────────────────────────────────────────────────────────
 text_sensor:
-  - platform: wifi_info
-    ip_address:
-      name: "IP"
-      icon: mdi:ip-outline
-
   - platform: template
     name: "현재 모드"
     id: current_mode_text
