@@ -82,6 +82,10 @@ globals:
   - id: elevator_text_state
     type: std::string
     initial_value: '"대기"'
+  # 이거 추가
+  - id: elevator_triggered
+    type: bool
+    initial_value: 'false'
 
 # ============================================
 # 조명 (7분씩 분산: 180, 187, 194, 201, 208, 215min)
@@ -655,13 +659,21 @@ binary_sensor:
     state_on:
       offset: 8
       data: [0x03]
-    on_press:
+    on_state:
       then:
-        - lambda: 'id(elevator_text_state) = "도착";'
-        - component.update: elevator_display_sensor
-        - delay: 10s
-        - lambda: 'id(elevator_text_state) = "대기";'
-        - component.update: elevator_display_sensor
+        - if:
+            condition:
+              - lambda: 'return x && !id(elevator_triggered);'
+            then:
+              - lambda: |
+                  id(elevator_triggered) = true;
+                  id(elevator_text_state) = "도착";
+              - component.update: elevator_display_sensor
+              - delay: 10s
+              - lambda: |
+                  id(elevator_triggered) = false;
+                  id(elevator_text_state) = "대기";
+              - component.update: elevator_display_sensor
 
 text_sensor:
   - platform: template
