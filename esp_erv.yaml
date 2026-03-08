@@ -297,7 +297,6 @@ sensor:
   - platform: template
     name: "실내 온도 In"          # ASCII 충돌 방지용 In/Out 유지
     id: erv_indoor_temp
-    object_id: erv_indoor_temp
     icon: "mdi:home-thermometer"
     unit_of_measurement: "°C"
     accuracy_decimals: 1
@@ -307,7 +306,6 @@ sensor:
   - platform: template
     name: "외기 온도 Out"
     id: erv_outdoor_temp
-    object_id: erv_outdoor_temp
     icon: "mdi:thermometer-chevron-up"
     unit_of_measurement: "°C"
     accuracy_decimals: 0
