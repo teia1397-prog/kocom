@@ -511,6 +511,7 @@ number:
     min_value: 1
     max_value: 3
     step: 1
+    mode: slider
     optimistic: true
     initial_value: 1
     set_action:
@@ -553,7 +554,7 @@ number:
     max_value: 12
     step: 1
     unit_of_measurement: "h"
-    mode: box
+    mode: slider
     optimistic: true
     initial_value: 0
     set_action:
