@@ -270,7 +270,7 @@ sensor:
     force_update: true
 
   - platform: template
-    name: "ERV 실내온도"
+    name: "ERV 실내온도 In"
     id: erv_indoor_temp
     icon: "mdi:thermometer"
     unit_of_measurement: "°C"
@@ -279,7 +279,7 @@ sensor:
     device_class: temperature
 
   - platform: template
-    name: "ERV 실외온도"
+    name: "ERV 실외온도 Out"
     id: erv_outdoor_temp
     icon: "mdi:thermometer-chevron-up"
     unit_of_measurement: "°C"
