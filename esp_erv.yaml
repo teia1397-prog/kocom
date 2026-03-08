@@ -8,8 +8,8 @@
 #   [6~7]   00 48          룸+Fan식별 (항상 00.48로 Fan 구분)
 #   [8~9]   00 00          커맨드
 #   [10]    P0 Power       0x11=On / 0x00=Off
-#   [11]    P1 Mode        0x01=전열 / 0x02=자동 / 0x03=바이패스 / 0x05=수면
-#   [12]    P2 Speed       0x40=저 / 0x80=중 / 0xC0=고
+#   [11]    P1 Mode        0x01=전열 / 0x02=자동 / 0x03=바이패스 / 0x04=타이머 / 0x05=수면
+#   [12]    P2 Speed/Timer [7:6]=풍량(0x40=저/0x80=중/0xC0=고) [3:0]=타이머시간(0x01~0x0C)
 #   [13]    P3 CO2 high    (항상 0x00)
 #   [14]    P4 CO2 mid     (항상 0x0A)
 #   [15]    P5 CO2 low     CO2 ppm = ((0x0A<<8)|bytes[15]) / 2.5
@@ -21,8 +21,8 @@
 # NASA 0x32 온도 패킷 (ERV 룸콘):
 #   타입 A (10 bytes): 32.00.08.D0.00.B0.xx.xx.[실외온도].34
 #     bytes[8] = 실외온도 (signed int8, °C)
-#   타입 B (16 bytes): 32.00.0E.D0.00.B0.xx.xx.xx.[0x00|0xFF].xx.xx.xx.[실내온도].xx.34
-#     bytes[13]/10 = 실내온도 (°C), bytes[9]==0x00 or 0xFF인 경우만 유효
+#   타입 B (16 bytes): 32.00.0E.D0.00.B0.xx.xx.xx.[0x00|0x01|0x02|0xFF].xx.xx.xx.[실내온도].xx.34
+#     bytes[13]/10 = 실내온도 (°C), bytes[9]==0x00 or 0xFF일 때만 유효
 # =====================================================================
 
 uart:
@@ -63,8 +63,7 @@ uart:
 
             // 타입 A (10 bytes): 실외온도
             if (bytes[i+2] == 0x08) {
-              float outdoor = (int8_t)bytes[i+8];
-              id(erv_outdoor_temp).publish_state(outdoor);
+              id(erv_outdoor_temp).publish_state((float)(int8_t)bytes[i+8]);
             }
 
             // 타입 B (16 bytes): 실내온도 (bytes[9]==0x00 or 0xFF일 때만)
@@ -86,11 +85,15 @@ uart:
             if (pkt_type != 0xDC && pkt_type != 0xBC) continue;
             if (bytes[i+6] != 0x00 || bytes[i+7] != 0x48) continue;
 
-            uint8_t power = bytes[i+10];
-            uint8_t mode  = bytes[i+11];
-            uint8_t speed = bytes[i+12];
-            bool is_on    = (power & 0x01);
-            uint16_t co2  = ((uint16_t)bytes[i+14] << 8) | bytes[i+15];
+            uint8_t power     = bytes[i+10];
+            uint8_t mode      = bytes[i+11];
+            uint8_t speed     = bytes[i+12];
+            bool    is_on     = (power & 0x01);
+            // 타이머 모드: speed byte = [7:6]풍량 | [3:0]시간
+            uint8_t spd_level = speed & 0xC0;
+            uint8_t timer_h   = speed & 0x0F;
+            uint8_t spd_val   = (spd_level == 0x40) ? 1 : (spd_level == 0x80) ? 2 : 3;
+            uint16_t co2      = ((uint16_t)bytes[i+14] << 8) | bytes[i+15];
 
             if (pkt_type == 0xDC) {
               // ── ACK 처리 ──
@@ -115,14 +118,20 @@ uart:
 
               id(erv_fan).state = is_on; id(erv_fan).publish_state();
 
-              if (speed == 0x40)      { id(erv_fan_speed) = 1; id(erv_speed_number).publish_state(1); }
-              else if (speed == 0x80) { id(erv_fan_speed) = 2; id(erv_speed_number).publish_state(2); }
-              else if (speed == 0xC0) { id(erv_fan_speed) = 3; id(erv_speed_number).publish_state(3); }
+              id(erv_fan_speed) = spd_val;
+              id(erv_speed_number).publish_state(spd_val);
 
               if (is_on) {
                 if      (mode == 0x01) id(erv_mode).publish_state("전열환기");
                 else if (mode == 0x02) id(erv_mode).publish_state("자동");
                 else if (mode == 0x03) id(erv_mode).publish_state("바이패스");
+                else if (mode == 0x04) {
+                  id(erv_mode).publish_state("타이머");
+                  if (timer_h >= 1 && timer_h <= 12) {
+                    id(erv_timer_hours) = timer_h;
+                    id(erv_timer_number).publish_state(timer_h);
+                  }
+                }
                 else if (mode == 0x05) id(erv_mode).publish_state("수면");
               }
 
@@ -140,41 +149,49 @@ uart:
                 id(erv_updating_from_ack) = true;
                 id(erv_fan).state = is_on; id(erv_fan).publish_state();
                 if (is_on) {
-                  if (speed == 0x40)      { id(erv_fan_speed) = 1; id(erv_speed_number).publish_state(1); }
-                  else if (speed == 0x80) { id(erv_fan_speed) = 2; id(erv_speed_number).publish_state(2); }
-                  else if (speed == 0xC0) { id(erv_fan_speed) = 3; id(erv_speed_number).publish_state(3); }
+                  id(erv_fan_speed) = spd_val;
+                  id(erv_speed_number).publish_state(spd_val);
                   if      (mode == 0x01) id(erv_mode).publish_state("전열환기");
                   else if (mode == 0x02) id(erv_mode).publish_state("자동");
                   else if (mode == 0x03) id(erv_mode).publish_state("바이패스");
+                  else if (mode == 0x04) {
+                    id(erv_mode).publish_state("타이머");
+                    if (timer_h >= 1 && timer_h <= 12) {
+                      id(erv_timer_hours) = timer_h;
+                      id(erv_timer_number).publish_state(timer_h);
+                    }
+                  }
                   else if (mode == 0x05) id(erv_mode).publish_state("수면");
                 }
                 id(erv_updating_from_ack) = false;
                 ESP_LOGI("erv", "부팅 초기화: ERV %s", is_on ? "ON" : "OFF");
               }
 
-              // CO2 실시간 업데이트 (on/off 무관)
+              // CO2 실시간 업데이트
               if (co2 > 400) {
                 id(erv_co2).publish_state((float)co2 / 2.5f);
               }
 
               // ── 룸콘 상태 동기화 (ACK 대기 중이 아닐 때만) ──
               if (id(erv_ack_consumed)) {
-                // 현재 BC 패킷 기준 상태값 계산
-                uint8_t new_speed_val = (speed == 0x40) ? 1 : (speed == 0x80) ? 2 : 3;
                 std::string new_mode_str = "전열환기";
                 if      (mode == 0x02) new_mode_str = "자동";
                 else if (mode == 0x03) new_mode_str = "바이패스";
+                else if (mode == 0x04) new_mode_str = "타이머";
                 else if (mode == 0x05) new_mode_str = "수면";
 
                 bool state_changed = (is_on != id(erv_fan_state));
-                bool speed_changed = is_on && (new_speed_val != id(erv_fan_speed));
+                bool speed_changed = is_on && (spd_val != id(erv_fan_speed));
                 bool mode_changed  = is_on && (new_mode_str != id(erv_mode).current_option());
+                bool timer_changed = is_on && (mode == 0x04) && (timer_h != id(erv_timer_hours))
+                                     && (timer_h >= 1 && timer_h <= 12);
 
-                if (state_changed || speed_changed || mode_changed) {
-                  ESP_LOGI("erv", "룸콘 변경 감지: on=%d→%d spd=%d→%d mode=%s→%s",
+                if (state_changed || speed_changed || mode_changed || timer_changed) {
+                  ESP_LOGI("erv", "룸콘 변경 감지: on=%d→%d spd=%d→%d mode=%s→%s timer=%d→%d",
                     id(erv_fan_state), is_on,
-                    id(erv_fan_speed), new_speed_val,
-                    id(erv_mode).current_option().c_str(), new_mode_str.c_str());
+                    id(erv_fan_speed), spd_val,
+                    id(erv_mode).current_option().c_str(), new_mode_str.c_str(),
+                    id(erv_timer_hours), timer_h);
 
                   id(erv_updating_from_ack) = true;
 
@@ -183,11 +200,15 @@ uart:
                     id(erv_fan).state = is_on; id(erv_fan).publish_state();
                   }
                   if (is_on && (speed_changed || state_changed)) {
-                    id(erv_fan_speed) = new_speed_val;
-                    id(erv_speed_number).publish_state(new_speed_val);
+                    id(erv_fan_speed) = spd_val;
+                    id(erv_speed_number).publish_state(spd_val);
                   }
                   if (is_on && (mode_changed || state_changed)) {
                     id(erv_mode).publish_state(new_mode_str);
+                  }
+                  if (is_on && (timer_changed || (state_changed && mode == 0x04))) {
+                    id(erv_timer_hours) = timer_h;
+                    id(erv_timer_number).publish_state(timer_h);
                   }
 
                   id(erv_updating_from_ack) = false;
@@ -235,6 +256,10 @@ globals:
     type: int
     restore_value: false
     initial_value: '1'
+  - id: erv_timer_hours
+    type: int
+    restore_value: false
+    initial_value: '1'
   - id: erv_ack_consumed
     type: bool
     restore_value: false
@@ -260,7 +285,7 @@ binary_sensor:
 
 sensor:
   - platform: template
-    name: "ERV CO2"
+    name: "CO2 농도"
     id: erv_co2
     icon: "mdi:molecule-co2"
     unit_of_measurement: "ppm"
@@ -270,17 +295,19 @@ sensor:
     force_update: true
 
   - platform: template
-    name: "ERV 실내온도 In"
+    name: "실내 온도 In"          # ASCII 충돌 방지용 In/Out 유지
     id: erv_indoor_temp
-    icon: "mdi:thermometer"
+    object_id: erv_indoor_temp
+    icon: "mdi:home-thermometer"
     unit_of_measurement: "°C"
     accuracy_decimals: 1
     state_class: measurement
     device_class: temperature
 
   - platform: template
-    name: "ERV 실외온도 Out"
+    name: "외기 온도 Out"
     id: erv_outdoor_temp
+    object_id: erv_outdoor_temp
     icon: "mdi:thermometer-chevron-up"
     unit_of_measurement: "°C"
     accuracy_decimals: 0
@@ -288,11 +315,11 @@ sensor:
     device_class: temperature
 
 # =====================================================================
-# Select - 모드 선택
+# Select - 운전 모드
 # =====================================================================
 select:
   - platform: template
-    name: "ERV 모드"
+    name: "운전 모드"
     id: erv_mode
     icon: "mdi:air-filter"
     optimistic: true
@@ -301,6 +328,7 @@ select:
       - "바이패스"
       - "자동"
       - "수면"
+      - "타이머"
     initial_option: "전열환기"
     set_action:
       - lambda: |-
@@ -312,10 +340,14 @@ select:
           if (x == "바이패스") mode_byte = 0x03;
           else if (x == "자동") mode_byte = 0x02;
           else if (x == "수면") mode_byte = 0x05;
+          else if (x == "타이머") mode_byte = 0x04;
 
           uint8_t spd = 0x40;
           if (id(erv_fan_speed) == 2) spd = 0x80;
           else if (id(erv_fan_speed) == 3) spd = 0xC0;
+
+          // 타이머 모드: speed byte에 시간 포함
+          if (mode_byte == 0x04) spd |= (uint8_t)id(erv_timer_hours);
 
           uint8_t csum = (uint8_t)(0x30+0xBC+0x00+0x48+0x00+0x01+
                                    0x00+0x00+0x11+mode_byte+spd);
@@ -327,11 +359,11 @@ select:
           ESP_LOGI("erv", "모드변경: 0x%02X spd=0x%02X csum=0x%02X", mode_byte, spd, csum);
 
 # =====================================================================
-# Number - 속도 (1=저 / 2=중 / 3=고)
+# Number - 풍량 (1=저 / 2=중 / 3=고)
 # =====================================================================
 number:
   - platform: template
-    name: "ERV 속도"
+    name: "풍량"
     id: erv_speed_number
     icon: "mdi:fan-speed-1"
     min_value: 1
@@ -352,10 +384,13 @@ number:
           if (mode_str == "바이패스") mode_byte = 0x03;
           else if (mode_str == "자동") mode_byte = 0x02;
           else if (mode_str == "수면") mode_byte = 0x05;
+          else if (mode_str == "타이머") mode_byte = 0x04;
 
           uint8_t spd = 0x40;
           if ((int)x == 2) spd = 0x80;
           else if ((int)x == 3) spd = 0xC0;
+
+          if (mode_byte == 0x04) spd |= (uint8_t)id(erv_timer_hours);
 
           uint8_t csum = (uint8_t)(0x30+0xBC+0x00+0x48+0x00+0x01+
                                    0x00+0x00+0x11+mode_byte+spd);
@@ -364,14 +399,48 @@ number:
                            0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
           id(erv_ack_consumed) = false;
           id(uart_bus).write_array(pkt, 21);
-          ESP_LOGI("erv", "속도변경: %d spd=0x%02X csum=0x%02X", (int)x, spd, csum);
+          ESP_LOGI("erv", "풍량변경: %d spd=0x%02X csum=0x%02X", (int)x, spd, csum);
+
+  - platform: template
+    name: "타이머 시간"
+    id: erv_timer_number
+    icon: "mdi:timer-outline"
+    min_value: 1
+    max_value: 12
+    step: 1
+    unit_of_measurement: "h"
+    optimistic: true
+    initial_value: 1
+    set_action:
+      - lambda: |-
+          if (id(erv_updating_from_ack)) return;
+          if (!id(erv_fan_state)) return;
+          if (id(airpurifier_linked).state) return;
+          // 타이머 모드일 때만 전송
+          if (id(erv_mode).current_option() != "타이머") return;
+
+          id(erv_timer_hours) = (int)x;
+
+          uint8_t spd = 0x40;
+          if (id(erv_fan_speed) == 2) spd = 0x80;
+          else if (id(erv_fan_speed) == 3) spd = 0xC0;
+          spd |= (uint8_t)id(erv_timer_hours);
+
+          uint8_t csum = (uint8_t)(0x30+0xBC+0x00+0x48+0x00+0x01+
+                                   0x00+0x00+0x11+0x04+spd);
+          uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
+                           0x00,0x00,0x11,0x04,spd,
+                           0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
+          id(erv_ack_consumed) = false;
+          id(uart_bus).write_array(pkt, 21);
+          ESP_LOGI("erv", "타이머변경: %dh spd=0x%02X csum=0x%02X", (int)x, spd, csum);
 
 # =====================================================================
-# Fan - ERV 팬 ON/OFF
+# Fan - 전열교환기 ON/OFF
 # =====================================================================
 fan:
   - platform: template
-    name: "ERV 팬"
+    name: "전열교환기"
     id: erv_fan
 
     on_turn_on:
@@ -388,10 +457,13 @@ fan:
           if (mode_str == "바이패스") mode_byte = 0x03;
           else if (mode_str == "자동") mode_byte = 0x02;
           else if (mode_str == "수면") mode_byte = 0x05;
+          else if (mode_str == "타이머") mode_byte = 0x04;
 
           uint8_t spd = 0x40;
           if (id(erv_fan_speed) == 2) spd = 0x80;
           else if (id(erv_fan_speed) == 3) spd = 0xC0;
+
+          if (mode_byte == 0x04) spd |= (uint8_t)id(erv_timer_hours);
 
           uint8_t csum = (uint8_t)(0x30+0xBC+0x00+0x48+0x00+0x01+
                                    0x00+0x00+0x11+mode_byte+spd);
@@ -400,7 +472,7 @@ fan:
                            0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
           id(erv_ack_consumed) = false;
           id(uart_bus).write_array(pkt, 21);
-          ESP_LOGI("erv", "팬 ON: mode=0x%02X spd=0x%02X csum=0x%02X",
+          ESP_LOGI("erv", "전열교환기 ON: mode=0x%02X spd=0x%02X csum=0x%02X",
                     mode_byte, spd, csum);
 
     on_turn_off:
@@ -413,7 +485,7 @@ fan:
           id(erv_ack_consumed) = false;
           id(uart_bus).write_array(pkt, 21);
           id(erv_fan_state) = false;
-          ESP_LOGI("erv", "팬 OFF 명령 전송");
+          ESP_LOGI("erv", "전열교환기 OFF 명령 전송");
 
 # =====================================================================
 # Interval - 10초마다 Scan 조회 (CO2 갱신)
