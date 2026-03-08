@@ -213,8 +213,11 @@ uart:
               id(erv_updating_from_ack) = true;
 
               id(erv_fan).state = is_on; id(erv_fan).publish_state();
-              id(erv_fan_speed) = spd_val;
-              id(erv_speed_number).publish_state(spd_val);
+              // OFF 시 speed=0x00 → 파싱 시 spd_val=3이 되므로 ON일 때만 풍량 업데이트
+              if (is_on) {
+                id(erv_fan_speed) = spd_val;
+                id(erv_speed_number).publish_state(spd_val);
+              }
 
               if (is_on) {
                 if      (mode == 0x01) id(erv_mode).publish_state("전열환기");
