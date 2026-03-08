@@ -1,28 +1,58 @@
 # =====================================================================
-# ERV ESPHome - 코콤 월패드 프로토콜 기반
+# ESP-ERV ESPHome - 코콤 월패드 연동 전열교환기 제어
+# 보드: M5Stack AtomS3 (ESP32-S3)
 # =====================================================================
-# 코콤 패킷 구조 (21 bytes):
-#   [0~1]   AA 55          헤더
-#   [2~3]   30 BC/DC       타입 (BC=Send/Broadcast, DC=ACK)
-#   [4~5]   디바이스       (Send시 00.48=Fan / ACK/BC시 00.01=Wallpad)
-#   [6~7]   00 48          룸+Fan식별 (항상 00.48로 Fan 구분)
-#   [8~9]   00 00          커맨드
-#   [10]    P0 Power       0x11=On / 0x00=Off
-#   [11]    P1 Mode        0x01=전열 / 0x02=자동 / 0x03=바이패스 / 0x04=타이머 / 0x05=수면
-#   [12]    P2 Speed/Timer [7:6]=풍량(0x40=저/0x80=중/0xC0=고) [3:0]=타이머시간(0x01~0x0C)
-#   [13]    P3 CO2 high    (항상 0x00)
-#   [14]    P4 CO2 mid     (항상 0x0A)
-#   [15]    P5 CO2 low     CO2 ppm = ((0x0A<<8)|bytes[15]) / 2.5
-#   [16]    P6 ErrorCode
-#   [17]    P7 unused
-#   [18]    Checksum       bytes[2]~[17] 합산 mod 256
-#   [19~20] 0D 0D          푸터
 #
-# NASA 0x32 온도 패킷 (ERV 룸콘):
-#   타입 A (10 bytes): 32.00.08.D0.00.B0.xx.xx.[실외온도].34
-#     bytes[8] = 실외온도 (signed int8, °C)
-#   타입 B (16 bytes): 32.00.0E.D0.00.B0.xx.xx.xx.[0x00|0x01|0x02|0xFF].xx.xx.xx.[실내온도].xx.34
-#     bytes[13]/10 = 실내온도 (°C), bytes[9]==0x00 or 0xFF일 때만 유효
+# ■ 코콤 ERV 패킷 구조 (21 bytes, AA55 헤더 / 0D0D 푸터)
+# ─────────────────────────────────────────────────────────────────────
+#  [0~1]  AA 55        헤더
+#  [2~3]  30 BC/DC     패킷 타입
+#                        BC = 월패드→ERV 명령 / ERV 자체 브로드캐스트
+#                        DC = ERV→월패드 ACK
+#  [4~5]  디바이스     명령 시: 00.48(ESP→ERV) / ACK·BC 시: 00.01(ERV→월패드)
+#  [6~7]  00 48        Fan 식별자 (항상 고정)
+#  [8~9]  커맨드       00.00=일반 / 00.3A=Scan(CO2조회)
+#  [10]   P0 Power     0x11=ON / 0x00=OFF
+#  [11]   P1 Mode      0x01=전열환기 / 0x02=자동 / 0x03=바이패스
+#                      0x04=타이머   / 0x05=수면
+#  [12]   P2 Speed     일반모드: 0x40=저 / 0x80=중 / 0xC0=고
+#                      타이머모드: [7:6]=풍량(0x40/0x80/0xC0) | [3:0]=시간(0x00~0x0C)
+#                        예) 0x41=저풍량+1h / 0x4B=저풍량+11h / 0xC0=고풍량+0h
+#  [13]   P3 CO2 high  항상 0x00
+#  [14]   P4 CO2 mid   항상 0x0A
+#  [15]   P5 CO2 low   CO2(ppm) = ((0x0A << 8) | bytes[15]) / 2.5  ← 실측 검증
+#  [16]   P6 ErrorCode
+#  [17]   P7 unused
+#  [18]   Checksum     bytes[2]~[17] 합산 mod 256
+#  [19~20] 0D 0D       푸터
+#
+# ■ NASA RS485 온도 패킷 (0x32 헤더)
+# ─────────────────────────────────────────────────────────────────────
+#  [타입A] 10 bytes - 실외온도
+#    32.00.08.D0.00.B0.xx.xx.[실외온도].34
+#    bytes[i+2]=0x08, bytes[i+3]=0xD0, bytes[i+5]=0xB0
+#    실외온도 = (int8_t)bytes[i+8]  (signed, °C)
+#
+#  [타입B] 16 bytes - 실내온도
+#    32.00.0E.00.D0.B0.xx.xx.xx.[sub].xx.xx.xx.[실내온도].xx.34
+#    bytes[i+2]=0x0E, bytes[i+3]=0x00, bytes[i+4]=0xD0, bytes[i+5]=0xB0
+#    실내온도 = bytes[i+13] / 10.0  (bytes[i+9]==0x00 or 0xFF 일 때만 유효)
+#    ※ 주의: 타입A와 bytes[3]이 다름 (0xD0 vs 0x00) → 별도 조건 필요
+#
+# ■ NASA RS485 PM2.5 패킷 후보 (0x32 헤더, 장치주소 0xC0)
+# ─────────────────────────────────────────────────────────────────────
+#  [타입C] 13 bytes - 공기질 (PM2.5 추정, 미확정)
+#    32.00.0B.D0.00.C0.xx.FF.FF.FF.[?].[?].34
+#    bytes[i+2]=0x0B, bytes[i+3]=0xD0, bytes[i+5]=0xC0
+#    현재 bytes[i+10], bytes[i+11] 값을 HA에 노출하여 PM2.5 매핑 확인 중
+#    → PM2.5=11일 때 어떤 바이트가 0x0B인지 확인 후 파싱 확정 예정
+#
+# ■ 공기청정기 연동 패킷 (비코콤 RS485)
+# ─────────────────────────────────────────────────────────────────────
+#  32.xx.0E.D0.xx.B1.xx.xx.[연동상태].xx...
+#  bytes[i+2]=0x0E, bytes[i+3]=0xD0, bytes[i+5]=0xB1
+#  bytes[i+7]==0x01 → 공기청정기 연동 ON (ERV 수동조작 차단)
+#
 # =====================================================================
 
 uart:
@@ -46,7 +76,11 @@ uart:
 
           if (direction != uart::UART_DIRECTION_RX) return;
 
-          // ── 공기청정기 연동 감지 (비코콤 RS485 패킷) ──
+          // ──────────────────────────────────────────────
+          // [1] 공기청정기 연동 감지
+          //     패킷: 32.xx.0E.D0.xx.B1.xx.[연동].xx...
+          //     bytes[i+7]==0x01 → 연동 ON
+          // ──────────────────────────────────────────────
           for (int i = 0; i + 7 < (int)bytes.size(); i++) {
             if (bytes[i]   == 0x32 &&
                 bytes[i+2] == 0x0E &&
@@ -57,17 +91,32 @@ uart:
             }
           }
 
-          // ── NASA 0x32 온도 파싱 (ERV 룸콘, 장치주소 B0) ──
+          // ──────────────────────────────────────────────
+          // [2] NASA 온도 파싱 (장치주소 0xB0)
+          //
+          //  타입A (실외): bytes[i+2]=0x08, bytes[i+3]=0xD0, bytes[i+5]=0xB0
+          //    실외온도 = (int8_t)bytes[i+8]
+          //
+          //  타입B (실내): bytes[i+2]=0x0E, bytes[i+3]=0x00, bytes[i+4]=0xD0, bytes[i+5]=0xB0
+          //    실내온도 = bytes[i+13]/10 (bytes[i+9]==0x00 or 0xFF 일 때만)
+          //    ※ 타입A와 달리 bytes[i+3]=0x00, bytes[i+4]=0xD0 임에 주의
+          // ──────────────────────────────────────────────
           for (int i = 0; i + 9 < (int)bytes.size(); i++) {
-            if (bytes[i] != 0x32 || bytes[i+3] != 0xD0 || bytes[i+5] != 0xB0) continue;
+            if (bytes[i] != 0x32) continue;
 
-            // 타입 A (10 bytes): 실외온도
-            if (bytes[i+2] == 0x08) {
+            // 타입A: 실외온도
+            if (bytes[i+2] == 0x08 &&
+                bytes[i+3] == 0xD0 &&
+                bytes[i+5] == 0xB0) {
               id(erv_outdoor_temp).publish_state((float)(int8_t)bytes[i+8]);
             }
 
-            // 타입 B (16 bytes): 실내온도 (bytes[9]==0x00 or 0xFF일 때만)
-            if (bytes[i+2] == 0x0E && i + 15 < (int)bytes.size()) {
+            // 타입B: 실내온도 (bytes[3]=0x00, bytes[4]=0xD0 → 타입A와 구조 다름)
+            if (bytes[i+2] == 0x0E &&
+                bytes[i+3] == 0x00 &&
+                i + 15 < (int)bytes.size() &&
+                bytes[i+4] == 0xD0 &&
+                bytes[i+5] == 0xB0) {
               if (bytes[i+9] == 0x00 || bytes[i+9] == 0xFF) {
                 float indoor = bytes[i+13] / 10.0f;
                 if (indoor > 5.0f && indoor < 45.0f) {
@@ -77,7 +126,34 @@ uart:
             }
           }
 
-          // ── 코콤 Fan 패킷 파싱 (30.DC ACK + 30.BC 브로드캐스트) ──
+          // ──────────────────────────────────────────────
+          // [3] PM2.5 후보 파싱 (장치주소 0xC0, 미확정)
+          //     패킷: 32.00.0B.D0.00.C0.xx.FF.FF.FF.[b10].[b11].34
+          //     bytes[i+10], bytes[i+11] 값을 HA 센서로 노출
+          //     → PM2.5=11일 때 어느 바이트가 0x0B인지 확인 후 확정
+          // ──────────────────────────────────────────────
+          for (int i = 0; i + 12 < (int)bytes.size(); i++) {
+            if (bytes[i]   == 0x32 &&
+                bytes[i+2] == 0x0B &&
+                bytes[i+3] == 0xD0 &&
+                bytes[i+5] == 0xC0) {
+              // bytes[i+10], bytes[i+11]을 각각 후보 센서에 발행
+              id(erv_pm25_raw_b10).publish_state(bytes[i+10]);
+              id(erv_pm25_raw_b11).publish_state(bytes[i+11]);
+              ESP_LOGI("erv", "PM2.5 후보 패킷: b10=0x%02X(%d) b11=0x%02X(%d)",
+                bytes[i+10], bytes[i+10], bytes[i+11], bytes[i+11]);
+              break;
+            }
+          }
+
+          // ──────────────────────────────────────────────
+          // [4] 코콤 Fan 패킷 파싱 (AA55 헤더 / 0D0D 푸터)
+          //     패킷 식별: AA.55.30.[BC/DC].xx.xx.00.48.xx.xx...
+          //     bytes[i+6]=0x00, bytes[i+7]=0x48 → Fan 패킷
+          //
+          //  DC(ACK): ERV가 명령에 응답
+          //  BC: ERV 자체 브로드캐스트 (상태 주기 발행)
+          // ──────────────────────────────────────────────
           for (int i = 0; i + 18 < (int)bytes.size(); i++) {
             if (bytes[i]   != 0xAA || bytes[i+1] != 0x55) continue;
             if (bytes[i+2] != 0x30) continue;
@@ -89,7 +165,7 @@ uart:
             uint8_t mode      = bytes[i+11];
             uint8_t speed     = bytes[i+12];
             bool    is_on     = (power & 0x01);
-            // 타이머 모드: speed byte = [7:6]풍량 | [3:0]시간
+            // 타이머 모드: speed byte 상위 2bit=풍량, 하위 4bit=시간
             uint8_t spd_level = speed & 0xC0;
             uint8_t timer_h   = speed & 0x0F;
             uint8_t spd_val   = (spd_level == 0x40) ? 1 : (spd_level == 0x80) ? 2 : 3;
@@ -97,6 +173,7 @@ uart:
 
             if (pkt_type == 0xDC) {
               // ── ACK 처리 ──
+              // Scan(0x3A) ACK: CO2만 업데이트하고 상태 동기화는 스킵
               bool is_scan_ack = (bytes[i+8] == 0x00 && bytes[i+9] == 0x3A);
               if (is_scan_ack) {
                 ESP_LOGI("uart_debug", "Scan ACK 수신 → 상태 업데이트 스킵");
@@ -104,6 +181,7 @@ uart:
                 break;
               }
 
+              // 이미 처리된 ACK 무시 (ERV는 ACK를 복수 전송하는 경우 있음)
               if (id(erv_ack_consumed)) {
                 ESP_LOGI("uart_debug", "추가 ACK 무시 (이미 처리됨)");
                 break;
@@ -117,7 +195,6 @@ uart:
               id(erv_updating_from_ack) = true;
 
               id(erv_fan).state = is_on; id(erv_fan).publish_state();
-
               id(erv_fan_speed) = spd_val;
               id(erv_speed_number).publish_state(spd_val);
 
@@ -127,10 +204,8 @@ uart:
                 else if (mode == 0x03) id(erv_mode).publish_state("바이패스");
                 else if (mode == 0x04) {
                   id(erv_mode).publish_state("타이머");
-                  if (timer_h >= 1 && timer_h <= 12) {
-                    id(erv_timer_hours) = timer_h;
-                    id(erv_timer_number).publish_state(timer_h);
-                  }
+                  id(erv_timer_hours) = timer_h;
+                  id(erv_timer_number).publish_state(timer_h);
                 }
                 else if (mode == 0x05) id(erv_mode).publish_state("수면");
               }
@@ -140,9 +215,9 @@ uart:
               id(erv_updating_from_ack) = false;
 
             } else {
-              // ── 브로드캐스트(30.BC) 처리 ──
+              // ── 브로드캐스트(BC) 처리 ──
 
-              // 부팅 후 첫 브로드캐스트: 실제 ERV 상태를 HA에 반영
+              // 부팅 후 첫 BC: ERV 실제 상태로 HA 초기화
               if (!id(erv_initialized)) {
                 id(erv_initialized) = true;
                 id(erv_fan_state) = is_on;
@@ -156,10 +231,8 @@ uart:
                   else if (mode == 0x03) id(erv_mode).publish_state("바이패스");
                   else if (mode == 0x04) {
                     id(erv_mode).publish_state("타이머");
-                    if (timer_h >= 1 && timer_h <= 12) {
-                      id(erv_timer_hours) = timer_h;
-                      id(erv_timer_number).publish_state(timer_h);
-                    }
+                    id(erv_timer_hours) = timer_h;
+                    id(erv_timer_number).publish_state(timer_h);
                   }
                   else if (mode == 0x05) id(erv_mode).publish_state("수면");
                 }
@@ -172,7 +245,8 @@ uart:
                 id(erv_co2).publish_state((float)co2 / 2.5f);
               }
 
-              // ── 룸콘 상태 동기화 (ACK 대기 중이 아닐 때만) ──
+              // ── 룸콘 상태 동기화 ──
+              // erv_ack_consumed=false(ACK 대기 중) 이면 ESP 명령 처리 중이므로 스킵
               if (id(erv_ack_consumed)) {
                 std::string new_mode_str = "전열환기";
                 if      (mode == 0x02) new_mode_str = "자동";
@@ -183,11 +257,10 @@ uart:
                 bool state_changed = (is_on != id(erv_fan_state));
                 bool speed_changed = is_on && (spd_val != id(erv_fan_speed));
                 bool mode_changed  = is_on && (new_mode_str != id(erv_mode).current_option());
-                bool timer_changed = is_on && (mode == 0x04) && (timer_h != id(erv_timer_hours))
-                                     && (timer_h >= 1 && timer_h <= 12);
+                bool timer_changed = is_on && (mode == 0x04) && (timer_h != id(erv_timer_hours));
 
                 if (state_changed || speed_changed || mode_changed || timer_changed) {
-                  ESP_LOGI("erv", "룸콘 변경 감지: on=%d→%d spd=%d→%d mode=%s→%s timer=%d→%d",
+                  ESP_LOGI("erv", "룸콘 변경: on=%d→%d spd=%d→%d mode=%s→%s timer=%d→%d",
                     id(erv_fan_state), is_on,
                     id(erv_fan_speed), spd_val,
                     id(erv_mode).current_option().c_str(), new_mode_str.c_str(),
@@ -206,7 +279,7 @@ uart:
                   if (is_on && (mode_changed || state_changed)) {
                     id(erv_mode).publish_state(new_mode_str);
                   }
-                  if (is_on && (timer_changed || (state_changed && mode == 0x04))) {
+                  if (is_on && (mode == 0x04) && (timer_changed || state_changed)) {
                     id(erv_timer_hours) = timer_h;
                     id(erv_timer_number).publish_state(timer_h);
                   }
@@ -252,27 +325,27 @@ globals:
     type: bool
     restore_value: false
     initial_value: 'false'
-  - id: erv_fan_speed
+  - id: erv_fan_speed           # 현재 풍량 (1=저 / 2=중 / 3=고)
     type: int
     restore_value: false
     initial_value: '1'
-  - id: erv_timer_hours
+  - id: erv_timer_hours         # 타이머 잔여 시간 (0=꺼짐 / 1~12h)
     type: int
     restore_value: false
     initial_value: '1'
-  - id: erv_ack_consumed
+  - id: erv_ack_consumed        # ACK 수신 완료 여부 (true=대기없음 / false=ACK 대기중)
     type: bool
     restore_value: false
     initial_value: 'true'
-  - id: erv_updating_from_ack
+  - id: erv_updating_from_ack   # ACK/BC로 상태 업데이트 중 플래그 (set_action 재진입 방지)
     type: bool
     restore_value: false
     initial_value: 'false'
-  - id: erv_scan_sent_ms
+  - id: erv_scan_sent_ms        # 마지막 Scan 전송 시각 (millis)
     type: uint32_t
     restore_value: false
     initial_value: '0'
-  - id: erv_initialized
+  - id: erv_initialized         # 부팅 후 첫 BC로 실제 상태 반영 완료 여부
     type: bool
     restore_value: false
     initial_value: 'false'
@@ -284,6 +357,7 @@ binary_sensor:
     device_class: running
 
 sensor:
+  # CO2 농도 (ERV 내장 센서, Scan 조회로 갱신)
   - platform: template
     name: "CO2 농도"
     id: erv_co2
@@ -294,8 +368,11 @@ sensor:
     device_class: carbon_dioxide
     force_update: true
 
+  # 실내 온도 (NASA 타입B 패킷 bytes[13]/10)
+  # 타입B 구조: 32.00.0E.00.D0.B0... (bytes[3]=0x00, bytes[4]=0xD0)
+  # ※ 타입A(실외)와 bytes[3] 값이 달라 별도 조건 필요
   - platform: template
-    name: "실내 온도 In"          # ASCII 충돌 방지용 In/Out 유지
+    name: "실내 온도 In"
     id: erv_indoor_temp
     icon: "mdi:home-thermometer"
     unit_of_measurement: "°C"
@@ -303,6 +380,8 @@ sensor:
     state_class: measurement
     device_class: temperature
 
+  # 실외(외기) 온도 (NASA 타입A 패킷 bytes[8], signed int8)
+  # 타입A 구조: 32.00.08.D0.00.B0... (bytes[3]=0xD0)
   - platform: template
     name: "외기 온도 Out"
     id: erv_outdoor_temp
@@ -311,6 +390,25 @@ sensor:
     accuracy_decimals: 0
     state_class: measurement
     device_class: temperature
+
+  # PM2.5 후보 바이트 모니터링 (0xC0 디바이스 패킷)
+  # 패킷: 32.00.0B.D0.00.C0.xx.FF.FF.FF.[b10].[b11].34
+  # PM2.5=11일 때 b10/b11 중 어느 값이 0x0B(=11)인지 확인 후 파싱 확정 예정
+  - platform: template
+    name: "PM2.5 후보 b10"
+    id: erv_pm25_raw_b10
+    icon: "mdi:air-filter"
+    unit_of_measurement: "raw"
+    accuracy_decimals: 0
+    state_class: measurement
+
+  - platform: template
+    name: "PM2.5 후보 b11"
+    id: erv_pm25_raw_b11
+    icon: "mdi:air-filter"
+    unit_of_measurement: "raw"
+    accuracy_decimals: 0
+    state_class: measurement
 
 # =====================================================================
 # Select - 운전 모드
@@ -344,7 +442,7 @@ select:
           if (id(erv_fan_speed) == 2) spd = 0x80;
           else if (id(erv_fan_speed) == 3) spd = 0xC0;
 
-          // 타이머 모드: speed byte에 시간 포함
+          // 타이머 모드: speed byte 하위 4bit에 시간 포함
           if (mode_byte == 0x04) spd |= (uint8_t)id(erv_timer_hours);
 
           uint8_t csum = (uint8_t)(0x30+0xBC+0x00+0x48+0x00+0x01+
@@ -357,9 +455,10 @@ select:
           ESP_LOGI("erv", "모드변경: 0x%02X spd=0x%02X csum=0x%02X", mode_byte, spd, csum);
 
 # =====================================================================
-# Number - 풍량 (1=저 / 2=중 / 3=고)
+# Number - 풍량 / 타이머 시간
 # =====================================================================
 number:
+  # 풍량 (1=저 / 2=중 / 3=고)
   - platform: template
     name: "풍량"
     id: erv_speed_number
@@ -399,11 +498,13 @@ number:
           id(uart_bus).write_array(pkt, 21);
           ESP_LOGI("erv", "풍량변경: %d spd=0x%02X csum=0x%02X", (int)x, spd, csum);
 
+  # 타이머 시간 (0=즉시종료 / 1~12h)
+  # speed byte = [7:6]풍량 | [3:0]시간  예) 0x40=저+0h / 0x41=저+1h / 0xCC=고+12h
   - platform: template
     name: "타이머 시간"
     id: erv_timer_number
     icon: "mdi:timer-outline"
-    min_value: 1
+    min_value: 0
     max_value: 12
     step: 1
     unit_of_measurement: "h"
@@ -414,7 +515,6 @@ number:
           if (id(erv_updating_from_ack)) return;
           if (!id(erv_fan_state)) return;
           if (id(airpurifier_linked).state) return;
-          // 타이머 모드일 때만 전송
           if (id(erv_mode).current_option() != "타이머") return;
 
           id(erv_timer_hours) = (int)x;
@@ -477,6 +577,7 @@ fan:
       - lambda: |-
           if (id(erv_updating_from_ack)) return;
           if (id(airpurifier_linked).state) return;
+          // OFF 패킷: power=0x00, 나머지 0 / checksum=0x35 (0x30+0xBC+0x00+0x48+0x00+0x01=0x135 → 0x35)
           uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
                            0x00,0x00,0x00,0x00,0x00,
                            0x00,0x00,0x00,0x00,0x00,0x35,0x0D,0x0D};
@@ -487,11 +588,15 @@ fan:
 
 # =====================================================================
 # Interval - 10초마다 Scan 조회 (CO2 갱신)
+# Command=0x3A 전송 → ERV가 현재 상태+CO2를 30.BC로 응답
+# ACK(DC)는 파서에서 Scan ACK 확인 후 상태 업데이트 스킵
 # =====================================================================
 interval:
   - interval: 10s
     then:
       - lambda: |-
+          // Scan 패킷: AA55 30.BC 00.48 00.01 00.3A 00x6 6F 0D0D
+          // checksum = 0x30+0xBC+0x00+0x48+0x00+0x01+0x00+0x3A = 0x16F → 0x6F
           uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
                            0x00,0x3A,0x00,0x00,0x00,0x00,0x00,0x00,
                            0x00,0x00,0x6F,0x0D,0x0D};
