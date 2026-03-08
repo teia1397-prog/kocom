@@ -65,7 +65,6 @@ uart:
             uint8_t mode  = bytes[i+11];
             uint8_t speed = bytes[i+12];
             bool is_on    = (power & 0x01);
-            // CO2: 실측상 bytes[14]<<8|bytes[15], 스케일 /2.5 (룸콘 대비 검증)
             uint16_t co2  = ((uint16_t)bytes[i+14] << 8) | bytes[i+15];
 
             if (pkt_type == 0xDC) {
@@ -92,7 +91,7 @@ uart:
 
               id(erv_fan).state = is_on; id(erv_fan).publish_state();
 
-              if (speed == 0x40) { id(erv_fan_speed) = 1; id(erv_speed_number).publish_state(1); }
+              if (speed == 0x40)      { id(erv_fan_speed) = 1; id(erv_speed_number).publish_state(1); }
               else if (speed == 0x80) { id(erv_fan_speed) = 2; id(erv_speed_number).publish_state(2); }
               else if (speed == 0xC0) { id(erv_fan_speed) = 3; id(erv_speed_number).publish_state(3); }
 
@@ -117,7 +116,7 @@ uart:
                 id(erv_updating_from_ack) = true;
                 id(erv_fan).state = is_on; id(erv_fan).publish_state();
                 if (is_on) {
-                  if (speed == 0x40) { id(erv_fan_speed) = 1; id(erv_speed_number).publish_state(1); }
+                  if (speed == 0x40)      { id(erv_fan_speed) = 1; id(erv_speed_number).publish_state(1); }
                   else if (speed == 0x80) { id(erv_fan_speed) = 2; id(erv_speed_number).publish_state(2); }
                   else if (speed == 0xC0) { id(erv_fan_speed) = 3; id(erv_speed_number).publish_state(3); }
                   if      (mode == 0x01) id(erv_mode).publish_state("전열환기");
@@ -134,30 +133,25 @@ uart:
                 id(erv_co2).publish_state((float)co2 / 2.5f);
               }
 
-              // 재기동 감지: 켜져있어야 하는데 꺼짐 브로드캐스트 수신 → 재기동
-              // erv_ack_consumed=false (명령 대기 중)이면 무시 (모드전환 후 ERV 자동 브로드캐스트)
-              bool cooldown_ok = (millis() - id(erv_last_restart_at) > 10000);
-              bool scan_cooldown = (millis() - id(erv_scan_sent_ms)) > 2000;
-              if (id(erv_fan_state) && !is_on && cooldown_ok
-                  && id(erv_ack_consumed) && !id(airpurifier_linked).state
-                  && scan_cooldown) {
-                ESP_LOGI("erv", "ERV 꺼짐 감지(브로드캐스트) → 재기동");
-                id(erv_last_restart_at) = millis();
-                std::string mode_str = id(erv_mode).current_option();
-                uint8_t mode_byte = 0x01;
-                if (mode_str == "바이패스") mode_byte = 0x03;
-                else if (mode_str == "자동") mode_byte = 0x02;
-                else if (mode_str == "수면") mode_byte = 0x05;
-                uint8_t spd = 0x40;
-                if (id(erv_fan_speed) == 2) spd = 0x80;
-                else if (id(erv_fan_speed) == 3) spd = 0xC0;
-                uint8_t csum = (uint8_t)(0x30+0xBC+0x00+0x48+0x00+0x01+
-                                         0x00+0x00+0x11+mode_byte+spd);
-                uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
-                                 0x00,0x00,0x11,mode_byte,spd,
-                                 0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
-                id(erv_ack_consumed) = false;
-                id(uart_bus).write_array(pkt, 21);
+              // ── 룸콘 상태 동기화 (ACK 대기 중이 아닐 때만) ──
+              // erv_ack_consumed=false이면 ESP가 명령을 전송하고 ACK 대기 중이므로 스킵
+              if (id(erv_ack_consumed) && (is_on != id(erv_fan_state))) {
+                ESP_LOGI("erv", "룸콘 상태 변경 감지: %s → %s",
+                  id(erv_fan_state) ? "ON" : "OFF",
+                  is_on ? "ON" : "OFF");
+                id(erv_fan_state) = is_on;
+                id(erv_updating_from_ack) = true;
+                id(erv_fan).state = is_on; id(erv_fan).publish_state();
+                if (is_on) {
+                  if (speed == 0x40)      { id(erv_fan_speed) = 1; id(erv_speed_number).publish_state(1); }
+                  else if (speed == 0x80) { id(erv_fan_speed) = 2; id(erv_speed_number).publish_state(2); }
+                  else if (speed == 0xC0) { id(erv_fan_speed) = 3; id(erv_speed_number).publish_state(3); }
+                  if      (mode == 0x01) id(erv_mode).publish_state("전열환기");
+                  else if (mode == 0x02) id(erv_mode).publish_state("자동");
+                  else if (mode == 0x03) id(erv_mode).publish_state("바이패스");
+                  else if (mode == 0x05) id(erv_mode).publish_state("수면");
+                }
+                id(erv_updating_from_ack) = false;
               }
             }
             break;
@@ -209,18 +203,14 @@ globals:
     type: bool
     restore_value: false
     initial_value: 'false'
-  - id: erv_last_restart_at
-    type: uint32_t
-    restore_value: false
-    initial_value: '0'
   - id: erv_scan_sent_ms
     type: uint32_t
     restore_value: false
-    initial_value: '0'  # Scan 전송 시각, 2초간 재기동 억제용
+    initial_value: '0'
   - id: erv_initialized
     type: bool
     restore_value: false
-    initial_value: 'false'  # 부팅 후 첫 브로드캐스트로 실제 상태 반영 완료 여부
+    initial_value: 'false'
 
 binary_sensor:
   - platform: template
@@ -376,10 +366,9 @@ interval:
   - interval: 10s
     then:
       - lambda: |-
-          // 항상 조회 (켜짐/꺼짐 무관) → 30.BC로 CO2 갱신
           uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
                            0x00,0x3A,0x00,0x00,0x00,0x00,0x00,0x00,
                            0x00,0x00,0x6F,0x0D,0x0D};
-          id(erv_scan_sent_ms) = millis();  // Scan 시각 저장 → 2초간 재기동 억제
+          id(erv_scan_sent_ms) = millis();
           id(uart_bus).write_array(pkt, 21);
           ESP_LOGI("erv", "CO2 갱신 조회 (Scan)");
