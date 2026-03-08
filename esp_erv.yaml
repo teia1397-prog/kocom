@@ -543,18 +543,19 @@ number:
           id(uart_bus).write_array(pkt, 21);
           ESP_LOGI("erv", "풍량변경: %d spd=0x%02X csum=0x%02X", (int)x, spd, csum);
 
-  # 타이머 시간 (0=즉시종료 / 1~12h)
+  # 예약 OFF 타이머 (0=타이머없음 / 1~12h 후 자동종료)
   # speed byte = [7:6]풍량 | [3:0]시간  예) 0x40=저+0h / 0x41=저+1h / 0xCC=고+12h
   - platform: template
-    name: "타이머 시간"
+    name: "예약 OFF"
     id: erv_timer_number
     icon: "mdi:timer-outline"
     min_value: 0
     max_value: 12
     step: 1
     unit_of_measurement: "h"
+    mode: box
     optimistic: true
-    initial_value: 1
+    initial_value: 0
     set_action:
       - lambda: |-
           if (id(erv_updating_from_ack)) return;
