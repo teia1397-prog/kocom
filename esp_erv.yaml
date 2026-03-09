@@ -251,9 +251,9 @@ uart:
                   else if (mode == 0x02) id(erv_mode).publish_state("자동");
                   else if (mode == 0x03) id(erv_mode).publish_state("바이패스");
                   else if (mode == 0x04) {
-                    // 타이머 모드로 동작 중: select는 "전열환기" 유지, 예약 시간 반영
-                    id(erv_timer_hours) = timer_h;
-                    id(erv_timer_number).publish_state(timer_h);
+                    // 타이머 모드로 동작 중: select는 "전열환기" 유지
+                    // 원래 설정값은 패킷에 없으므로 슬라이더는 0 유지
+                    // 잔여시간은 erv_timer_remain 센서로 확인
                   }
                   else if (mode == 0x05) id(erv_mode).publish_state("수면");
                 }
