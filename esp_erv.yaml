@@ -226,8 +226,8 @@ uart:
                 else if (mode == 0x03) id(erv_mode).publish_state("바이패스");
                 else if (mode == 0x04) {
                   id(erv_mode).publish_state("타이머");
-                  id(erv_timer_hours) = timer_h;
-                  id(erv_timer_number).publish_state(timer_h);
+                  // ACK의 timer_h는 0으로 돌아올 수 있음 → set_action에서 저장한 값 유지
+                  id(erv_timer_number).publish_state(id(erv_timer_hours));
                 }
                 else if (mode == 0x05) id(erv_mode).publish_state("수면");
               }
