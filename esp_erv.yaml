@@ -291,14 +291,14 @@ uart:
                 bool state_changed = (is_on != id(erv_fan_state));
                 bool speed_changed = is_on && (spd_val != id(erv_fan_speed));
                 bool mode_changed  = is_on && (new_mode_str != id(erv_mode).current_option());
-                bool timer_changed = is_on && (mode == 0x04) && (timer_h != id(erv_timer_hours));
+                // timer_h는 BC에서 잔여시간 기준 내림값이므로 erv_timer_hours 덮어쓰기 금지
+                // (예: 2h 설정 후 61분 경과 → timer_h=1로 슬라이더가 되돌아가는 버그 방지)
 
-                if (state_changed || speed_changed || mode_changed || timer_changed) {
-                  ESP_LOGI("erv", "룸콘 변경: on=%d→%d spd=%d→%d mode=%s→%s timer=%d→%d",
+                if (state_changed || speed_changed || mode_changed) {
+                  ESP_LOGI("erv", "룸콘 변경: on=%d→%d spd=%d→%d mode=%s→%s",
                     id(erv_fan_state), is_on,
                     id(erv_fan_speed), spd_val,
-                    id(erv_mode).current_option().c_str(), new_mode_str.c_str(),
-                    id(erv_timer_hours), timer_h);
+                    id(erv_mode).current_option().c_str(), new_mode_str.c_str());
 
                   id(erv_updating_from_ack) = true;
 
@@ -312,10 +312,6 @@ uart:
                   }
                   if (is_on && (mode_changed || state_changed)) {
                     id(erv_mode).publish_state(new_mode_str);
-                  }
-                  if (is_on && (mode == 0x04) && (timer_changed || state_changed)) {
-                    id(erv_timer_hours) = timer_h;
-                    id(erv_timer_number).publish_state(timer_h);
                   }
 
                   id(erv_updating_from_ack) = false;
