@@ -225,8 +225,7 @@ uart:
                 else if (mode == 0x02) id(erv_mode).publish_state("자동");
                 else if (mode == 0x03) id(erv_mode).publish_state("바이패스");
                 else if (mode == 0x04) {
-                  id(erv_mode).publish_state("타이머");
-                  // ACK의 timer_h는 0으로 돌아올 수 있음 → set_action에서 저장한 값 유지
+                  // 타이머 모드: 운전 모드 select는 건드리지 않고 예약 시간만 표시
                   id(erv_timer_number).publish_state(id(erv_timer_hours));
                 }
                 else if (mode == 0x05) id(erv_mode).publish_state("수면");
@@ -252,7 +251,7 @@ uart:
                   else if (mode == 0x02) id(erv_mode).publish_state("자동");
                   else if (mode == 0x03) id(erv_mode).publish_state("바이패스");
                   else if (mode == 0x04) {
-                    id(erv_mode).publish_state("타이머");
+                    // 타이머 모드로 동작 중: select는 "전열환기" 유지, 예약 시간 반영
                     id(erv_timer_hours) = timer_h;
                     id(erv_timer_number).publish_state(timer_h);
                   }
@@ -278,11 +277,16 @@ uart:
               // ── 룸콘 상태 동기화 ──
               // erv_ack_consumed=false(ACK 대기 중) 이면 ESP 명령 처리 중이므로 스킵
               if (id(erv_ack_consumed)) {
-                std::string new_mode_str = "전열환기";
-                if      (mode == 0x02) new_mode_str = "자동";
-                else if (mode == 0x03) new_mode_str = "바이패스";
-                else if (mode == 0x04) new_mode_str = "타이머";
-                else if (mode == 0x05) new_mode_str = "수면";
+                // 타이머 모드(0x04)인 경우 select는 현재 값 유지 → mode_changed 발생 안 함
+                std::string new_mode_str;
+                if (mode == 0x04) {
+                  new_mode_str = id(erv_mode).current_option();
+                } else {
+                  new_mode_str = "전열환기";
+                  if      (mode == 0x02) new_mode_str = "자동";
+                  else if (mode == 0x03) new_mode_str = "바이패스";
+                  else if (mode == 0x05) new_mode_str = "수면";
+                }
 
                 bool state_changed = (is_on != id(erv_fan_state));
                 bool speed_changed = is_on && (spd_val != id(erv_fan_speed));
@@ -492,7 +496,6 @@ select:
       - "바이패스"
       - "자동"
       - "수면"
-      - "타이머"
     initial_option: "전열환기"
     set_action:
       - lambda: |-
@@ -504,14 +507,16 @@ select:
           if (x == "바이패스") mode_byte = 0x03;
           else if (x == "자동") mode_byte = 0x02;
           else if (x == "수면") mode_byte = 0x05;
-          else if (x == "타이머") mode_byte = 0x04;
 
           uint8_t spd = 0x40;
           if (id(erv_fan_speed) == 2) spd = 0x80;
           else if (id(erv_fan_speed) == 3) spd = 0xC0;
 
-          // 타이머 모드: speed byte 하위 4bit에 시간 포함
-          if (mode_byte == 0x04) spd |= (uint8_t)id(erv_timer_hours);
+          // 예약 OFF가 설정된 경우 → 타이머 모드(0x04)로 전송
+          if (id(erv_timer_hours) > 0) {
+            mode_byte = 0x04;
+            spd |= (uint8_t)id(erv_timer_hours);
+          }
 
           uint8_t csum = (uint8_t)(0x30+0xBC+0x00+0x48+0x00+0x01+
                                    0x00+0x00+0x11+mode_byte+spd);
@@ -550,13 +555,16 @@ number:
           if (mode_str == "바이패스") mode_byte = 0x03;
           else if (mode_str == "자동") mode_byte = 0x02;
           else if (mode_str == "수면") mode_byte = 0x05;
-          else if (mode_str == "타이머") mode_byte = 0x04;
 
           uint8_t spd = 0x40;
           if ((int)x == 2) spd = 0x80;
           else if ((int)x == 3) spd = 0xC0;
 
-          if (mode_byte == 0x04) spd |= (uint8_t)id(erv_timer_hours);
+          // 예약 OFF가 설정된 경우 → 타이머 모드로 전송
+          if (id(erv_timer_hours) > 0) {
+            mode_byte = 0x04;
+            spd |= (uint8_t)id(erv_timer_hours);
+          }
 
           uint8_t csum = (uint8_t)(0x30+0xBC+0x00+0x48+0x00+0x01+
                                    0x00+0x00+0x11+mode_byte+spd);
@@ -583,25 +591,42 @@ number:
     set_action:
       - lambda: |-
           if (id(erv_updating_from_ack)) return;
-          if (!id(erv_fan_state)) return;
           if (id(airpurifier_linked).state) return;
-          if (id(erv_mode).current_option() != "타이머") return;
 
           id(erv_timer_hours) = (int)x;
 
           uint8_t spd = 0x40;
           if (id(erv_fan_speed) == 2) spd = 0x80;
           else if (id(erv_fan_speed) == 3) spd = 0xC0;
-          spd |= (uint8_t)id(erv_timer_hours);
 
-          uint8_t csum = (uint8_t)(0x30+0xBC+0x00+0x48+0x00+0x01+
-                                   0x00+0x00+0x11+0x04+spd);
-          uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
-                           0x00,0x00,0x11,0x04,spd,
-                           0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
-          id(erv_ack_consumed) = false;
-          id(uart_bus).write_array(pkt, 21);
-          ESP_LOGI("erv", "타이머변경: %dh spd=0x%02X csum=0x%02X", (int)x, spd, csum);
+          if ((int)x == 0) {
+            // 예약 OFF 해제 → 현재 모드로 일반 패킷 전송 (ERV가 켜져있을 때만)
+            if (!id(erv_fan_state)) return;
+            std::string mode_str = id(erv_mode).current_option();
+            uint8_t mode_byte = 0x01;
+            if (mode_str == "바이패스") mode_byte = 0x03;
+            else if (mode_str == "자동") mode_byte = 0x02;
+            else if (mode_str == "수면") mode_byte = 0x05;
+            uint8_t csum = (uint8_t)(0x30+0xBC+0x00+0x48+0x00+0x01+
+                                     0x00+0x00+0x11+mode_byte+spd);
+            uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
+                             0x00,0x00,0x11,mode_byte,spd,
+                             0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
+            id(erv_ack_consumed) = false;
+            id(uart_bus).write_array(pkt, 21);
+            ESP_LOGI("erv", "예약 OFF 해제: mode=0x%02X spd=0x%02X", mode_byte, spd);
+          } else {
+            // 예약 OFF 설정 → 타이머 모드(0x04)로 전송, ERV가 꺼져있으면 켜면서 전송
+            spd |= (uint8_t)id(erv_timer_hours);
+            uint8_t csum = (uint8_t)(0x30+0xBC+0x00+0x48+0x00+0x01+
+                                     0x00+0x00+0x11+0x04+spd);
+            uint8_t pkt[] = {0xAA,0x55,0x30,0xBC,0x00,0x48,0x00,0x01,
+                             0x00,0x00,0x11,0x04,spd,
+                             0x00,0x00,0x00,0x00,0x00,csum,0x0D,0x0D};
+            id(erv_ack_consumed) = false;
+            id(uart_bus).write_array(pkt, 21);
+            ESP_LOGI("erv", "예약 OFF 설정: %dh spd=0x%02X csum=0x%02X", (int)x, spd, csum);
+          }
 
 # =====================================================================
 # Fan - 전열교환기 ON/OFF
@@ -625,13 +650,16 @@ fan:
           if (mode_str == "바이패스") mode_byte = 0x03;
           else if (mode_str == "자동") mode_byte = 0x02;
           else if (mode_str == "수면") mode_byte = 0x05;
-          else if (mode_str == "타이머") mode_byte = 0x04;
 
           uint8_t spd = 0x40;
           if (id(erv_fan_speed) == 2) spd = 0x80;
           else if (id(erv_fan_speed) == 3) spd = 0xC0;
 
-          if (mode_byte == 0x04) spd |= (uint8_t)id(erv_timer_hours);
+          // 예약 OFF가 설정된 경우 → 타이머 모드로 전송
+          if (id(erv_timer_hours) > 0) {
+            mode_byte = 0x04;
+            spd |= (uint8_t)id(erv_timer_hours);
+          }
 
           uint8_t csum = (uint8_t)(0x30+0xBC+0x00+0x48+0x00+0x01+
                                    0x00+0x00+0x11+mode_byte+spd);
