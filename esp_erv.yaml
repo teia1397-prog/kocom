@@ -266,6 +266,11 @@ uart:
                 id(erv_co2).publish_state((float)co2 / 2.5f);
               }
 
+              // BC 패킷 bytes[16], bytes[17] 로깅 (PM2.5 후보 확인용)
+              // 현재 항상 0x00 → PM2.5=53일 때도 변화 없으면 다른 패킷 탐색 필요
+              ESP_LOGI("erv", "BC b16=0x%02X(%d) b17=0x%02X(%d)",
+                bytes[i+16], bytes[i+16], bytes[i+17], bytes[i+17]);
+
               // ── 룸콘 상태 동기화 ──
               // erv_ack_consumed=false(ACK 대기 중) 이면 ESP 명령 처리 중이므로 스킵
               if (id(erv_ack_consumed)) {
@@ -353,7 +358,7 @@ globals:
   - id: erv_timer_hours         # 타이머 잔여 시간 (0=꺼짐 / 1~12h)
     type: int
     restore_value: false
-    initial_value: '1'
+    initial_value: '0'
   - id: erv_ack_consumed        # ACK 수신 완료 여부 (true=대기없음 / false=ACK 대기중)
     type: bool
     restore_value: false
