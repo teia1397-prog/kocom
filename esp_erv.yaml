@@ -266,8 +266,10 @@ uart:
                 id(erv_co2).publish_state((float)co2 / 2.5f);
               }
 
-              // 타이머 잔여 시간 (분) — 타이머 모드일 때만 유효, 비타이머=0
-              id(erv_timer_remain).publish_state((float)remain_m);
+              // 타이머 잔여 시간: timer_h*60 + remain_m (전체 남은 분)
+              // ERV: bytes[12]하위4bit=남은 완전한 시간(h), bytes[13]=현재 시간 내 잔여분
+              uint16_t total_remain = (mode == 0x04) ? ((uint16_t)timer_h * 60 + remain_m) : 0;
+              id(erv_timer_remain).publish_state((float)total_remain);
 
               // BC 패킷 bytes[16], bytes[17] 로깅 (PM2.5 후보 확인용)
               // 현재 항상 0x00 → PM2.5=53일 때도 변화 없으면 다른 패킷 탐색 필요
